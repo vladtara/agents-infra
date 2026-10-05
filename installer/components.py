@@ -15,7 +15,7 @@ from installer import envfile
 NAME_RE = re.compile(r"^[a-z0-9_-]+$")
 TOP_KEYS = {"description", "order", "dirs", "env", "setup", "tailscale"}
 ENV_KEYS = {"set", "generate", "ask"}
-STEP_KEYS = {"run", "once", "interactive"}
+STEP_KEYS = {"run", "once", "interactive", "headless"}
 TAILSCALE_KEYS = {"service"}
 INFRA_DIRS = ("tailscale", "dockge")
 
@@ -34,11 +34,13 @@ class Step:
 
     once: marker path; the step is skipped while it exists and the
     installer creates it after the step succeeds.
+    headless: run string used instead of an interactive step under --yes.
     """
 
     run: str
     once: str | None = None
     interactive: bool = False
+    headless: str | None = None
 
 
 @dataclass(frozen=True)
@@ -163,7 +165,13 @@ def _step(raw: dict, where: str) -> Step:
         _check_relative(once, "setup.once", where)
     if not isinstance(interactive, bool):
         raise ManifestError(f"{where}: 'setup.interactive' must be true or false")
-    return Step(run=run, once=once, interactive=interactive)
+    headless = raw.get("headless")
+    if headless is not None:
+        if not isinstance(headless, str) or not headless.strip():
+            raise ManifestError(f"{where}: 'setup.headless' must be a run string")
+        if not interactive:
+            raise ManifestError(f"{where}: 'setup.headless' only applies to steps with interactive = true")
+    return Step(run=run, once=once, interactive=interactive, headless=headless)
 
 
 def _check_keys(table, allowed: set[str], where: str) -> None:

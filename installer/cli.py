@@ -119,10 +119,13 @@ def install(component: Component, context: dict[str, str], *, prompt: Callable[[
         marker = path / step.once if step.once else None
         if marker and marker.exists():
             continue
+        run = step.run
         if step.interactive and prompt is None:
-            print(f"  skipped interactive step (--yes), run later: docker compose {step.run}")
-            continue
-        compose(path, *shlex.split(components.expand(step.run, context)))
+            if not step.headless:
+                print(f"  skipped interactive step (--yes), run later: docker compose {step.run}")
+                continue
+            run = step.headless
+        compose(path, *shlex.split(components.expand(run, context)))
         ran_setup = True
         if marker:
             marker.parent.mkdir(parents=True, exist_ok=True)

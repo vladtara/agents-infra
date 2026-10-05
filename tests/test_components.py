@@ -76,6 +76,13 @@ class LoadTest(RepoCase):
         with self.assertRaisesRegex(ManifestError, message):
             components.load(self.add(f"stacks/bad-{next(self._ids)}", toml, **kwargs))
 
+    def test_headless_alternative_for_interactive_steps(self):
+        toml = 'description = "x"\n[[setup]]\nrun = "run a"\ninteractive = true\nheadless = "run b"\n'
+        comp = components.load(self.add("stacks/hl", toml, env_example=None))
+        self.assertEqual(comp.setup[0].headless, "run b")
+        self.assert_invalid('description = "x"\n[[setup]]\nrun = "a"\nheadless = "b"\n', "headless.*interactive")
+        self.assert_invalid('description = "x"\n[[setup]]\nrun = "a"\ninteractive = true\nheadless = 1\n', "headless")
+
     def test_rejects_unknown_keys(self):
         self.assert_invalid('description = "x"\nport = 1\n', "unknown key.*port")
         self.assert_invalid('description = "x"\n[env]\nsecret = []\n', "unknown key.*secret")

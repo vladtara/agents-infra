@@ -43,6 +43,17 @@ order = 30
 ask = ["API_KEY"]
 """
 
+HEADLESS_TOML = """\
+description = "Headless"
+order = 40
+
+[[setup]]
+run = "run --rm hl onboard"
+once = "data/.onboarded"
+interactive = true
+headless = "run -T --rm hl onboard --non-interactive"
+"""
+
 UP = ("up", "-d", "--wait", "--wait-timeout", "180")
 
 
@@ -264,6 +275,26 @@ class InstallTest(CliCase):
         code, _, err = self.main("--skip-host", "other")
         self.assertEqual(code, 1)
         self.assertNotIn("TS_AUTHKEY", err)
+
+    def calls_for(self, path):
+        return [c.args[1:] for c in self.compose.call_args_list if c.args[0] == path and not c.kwargs.get("capture")]
+
+    def test_yes_runs_headless_variant_of_interactive_step(self):
+        hl = self.add_component("stacks/hl", HEADLESS_TOML)
+        _, out, _ = self.main("--skip-host", "--yes", "hl")
+        calls = self.calls_for(hl)
+        self.assertIn(("run", "-T", "--rm", "hl", "onboard", "--non-interactive"), calls)
+        self.assertNotIn(("run", "--rm", "hl", "onboard"), calls)
+        self.assertTrue((hl / "data" / ".onboarded").is_file())
+        self.assertNotIn("skipped interactive step", out)
+
+    def test_interactive_run_ignores_headless_variant(self):
+        hl = self.add_component("stacks/hl", HEADLESS_TOML)
+        self.main("--skip-host", "hl")
+        calls = self.calls_for(hl)
+        self.assertIn(("run", "--rm", "hl", "onboard"), calls)
+        self.assertNotIn(("run", "-T", "--rm", "hl", "onboard", "--non-interactive"), calls)
+
 
 if __name__ == "__main__":
     unittest.main()
