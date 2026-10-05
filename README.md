@@ -153,7 +153,7 @@ Stacks created from the Dockge UI work too. They have no `component.toml`, so `i
 
 ## Security notes
 
-- Dockge mounts the Docker socket, which is root-equivalent on the host. It listens on loopback only; leave its console disabled (the default).
+- Dockge mounts the Docker socket, which is root-equivalent on the host. It listens on loopback only and is reachable through the tailnet. Its web console is enabled (`DOCKGE_ENABLE_CONSOLE: true` in `dockge/compose.yaml`), so anyone who can log in to Dockge gets a shell with Docker socket access, which means root on the VM. Use a strong Dockge password and limit who can reach `agents-vm` port 443 with a tailnet ACL, or set it to `false` and run `rune dockge::up` to turn the console off.
 - The Tailscale containers have `NET_ADMIN` and `/dev/net/tun`; the VM node shares the host network. Treat `tailscale/data/` and `stacks/*/data/tailscale/` as credentials (node keys).
 - OpenClaw's sandbox (agents in sibling containers) is off. Enabling it needs the Docker socket; see the comments in `stacks/openclaw/compose.yaml`.
 - OpenClaw keeps OAuth tokens in plain SQLite under `stacks/openclaw/data/`. Treat that folder and `stacks/openclaw/backups/` as credentials.
