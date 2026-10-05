@@ -64,6 +64,14 @@ class CliCase(unittest.TestCase):
     def compose_calls(self):
         return [call.args[1:] for call in self.compose.call_args_list if not call.kwargs.get("capture")]
 
+    def add_component(self, rel, toml, env_example="API_KEY=\n"):
+        path = self.repo / rel
+        path.mkdir(parents=True)
+        (path / "component.toml").write_text(toml)
+        (path / "compose.yaml").write_text("services: {}\n")
+        (path / ".env.example").write_text(env_example)
+        return path
+
 
 class SelectionTest(CliCase):
     def test_unknown_component_fails_with_available_names(self):
@@ -87,6 +95,13 @@ class SelectionTest(CliCase):
 
 
 class InstallTest(CliCase):
+    def test_host_step_flags_tailscale_component(self):
+        self.add_component("tailscale", 'description = "ts"\norder = 5\n')
+        self.main("app")
+        self.assertFalse(self.ensure.call_args.kwargs["tailscale_component"])
+        self.main()
+        self.assertTrue(self.ensure.call_args.kwargs["tailscale_component"])
+
     def test_host_step_runs_unless_skipped(self):
         self.main("app")
         self.ensure.assert_called_once()

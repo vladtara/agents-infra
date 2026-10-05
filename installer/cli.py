@@ -38,7 +38,11 @@ def main(argv: list[str] | None = None, repo: Path = REPO) -> int:
             return 0
         selected = components.select(available, args.components)
         if not args.skip_host:
-            host.ensure(assume_yes=args.yes, confirm=confirm)
+            host.ensure(
+                assume_yes=args.yes,
+                confirm=confirm,
+                tailscale_component=any(c.name == "tailscale" for c in selected),
+            )
     except (ManifestError, SelectionError, host.HostError, CommandError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

@@ -1,7 +1,6 @@
-"""Check and install host prerequisites on Ubuntu/Debian: Docker, Tailscale and rune."""
+"""Check and install host prerequisites on Ubuntu/Debian: Docker and rune."""
 
 import getpass
-import json
 import os
 import shutil
 import tempfile
@@ -12,12 +11,16 @@ from pathlib import Path
 from installer import envfile
 from installer.shell import run, sudo
 
-TAILSCALE_INSTALL_URL = "https://tailscale.com/install.sh"
 RUNE_INSTALL_URL = "https://raw.githubusercontent.com/rune-task-runner/rune/main/scripts/install.sh"
 RELOGIN_HINT = (
     "Docker is installed but this session cannot reach it. If your user was just added to the "
     "docker group, log out and back in (or run `newgrp docker`), then rerun init.py. "
     "Otherwise check `sudo systemctl status docker`."
+)
+TAILSCALED_CONFLICT = (
+    "tailscaled is running on the host. It conflicts with the tailscale component, which also "
+    "uses the tailscale0 interface. Disable it with `sudo systemctl disable --now tailscaled`, "
+    "or install without the tailscale component."
 )
 
 
@@ -66,26 +69,15 @@ def docker_state() -> str:
     return "ok"
 
 
-def tailscale_status() -> dict | None:
-    """Parsed `tailscale status --json`, {} if it cannot be read, None if not installed."""
-    if not shutil.which("tailscale"):
-        return None
-    result = run(["tailscale", "status", "--json"], capture=True, check=False)
-    try:
-        return json.loads(result.stdout)
-    except json.JSONDecodeError:
-        return {}
+def host_tailscaled_active() -> bool:
+    """True when the host's own tailscaled systemd unit runs.
 
-
-def hostname_from_status(status: dict | None) -> str:
-    if not status or status.get("BackendState") != "Running":
-        return ""
-    return (status.get("Self") or {}).get("DNSName", "").rstrip(".")
-
-
-def tailnet_hostname() -> str:
-    """MagicDNS name of this machine, or "" when Tailscale is not up."""
-    return hostname_from_status(tailscale_status())
+    Uses systemd state rather than the process list, which would also show
+    the tailscale component's containerized tailscaled.
+    """
+    if not shutil.which("systemctl"):
+        return False
+    return run(["systemctl", "is-active", "--quiet", "tailscaled"], capture=True, check=False).returncode == 0
 
 
 def install_docker(osr: dict[str, str]) -> None:
@@ -96,22 +88,21 @@ def add_docker_group() -> None:
     run(sudo(["usermod", "-aG", "docker", getpass.getuser()]))
 
 
-def install_tailscale() -> None:
-    _run_remote_script(TAILSCALE_INSTALL_URL, [])
-
-
 def install_rune() -> None:
     _run_remote_script(RUNE_INSTALL_URL, sudo(["env", "INSTALL_DIR=/usr/local/bin"]))
 
 
-def ensure(*, assume_yes: bool, confirm: Callable[[str], bool]) -> None:
-    """Make sure Docker (required), Tailscale and rune (optional) are ready.
+def ensure(*, assume_yes: bool, confirm: Callable[[str], bool], tailscale_component: bool = False) -> None:
+    """Make sure Docker (required) and rune (optional) are ready.
 
-    Only the Docker install is distro specific; the Tailscale and rune
-    installers handle other Linux distributions themselves.
+    tailscale_component: the tailscale component is being installed, so a
+    host tailscaled would fight it for tailscale0.
     """
     def ask(question: str) -> bool:
         return assume_yes or confirm(question)
+
+    if tailscale_component and host_tailscaled_active():
+        raise HostError(TAILSCALED_CONFLICT)
 
     state = docker_state()
     if state == "missing":
@@ -131,18 +122,6 @@ def ensure(*, assume_yes: bool, confirm: Callable[[str], bool]) -> None:
     if state == "no-access":
         raise HostError(RELOGIN_HINT)
     _report("docker", "ok")
-
-    status = tailscale_status()
-    if status is None and ask("Tailscale is not installed. Install it?"):
-        install_tailscale()
-        status = tailscale_status()
-    if status is None:
-        _report("tailscale", "skipped; UIs stay reachable through an SSH tunnel only")
-    elif hostname_from_status(status):
-        _report("tailscale", f"ok ({hostname_from_status(status)})")
-    else:
-        print("  Tailscale is installed but not logged in. Open the URL it prints to authorize this VM.")
-        run(sudo(["tailscale", "up"]))
 
     if shutil.which("rune"):
         _report("rune", "ok")
