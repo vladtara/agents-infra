@@ -240,5 +240,30 @@ class InstallTest(CliCase):
         self.assertIn(other, up_paths)
 
 
+    def test_failed_up_explains_tailscale_login(self):
+        def fake_compose(path, *args, **kwargs):
+            if args[:1] == ("up",):
+                raise cli.CommandError("`docker compose up -d --wait --wait-timeout 180` exited with 1")
+            return done()
+
+        self.compose.side_effect = fake_compose
+        code, _, err = self.main("--skip-host", "app")
+        self.assertEqual(code, 1)
+        self.assertIn(f"TS_AUTHKEY in {self.app / '.env'}", err)
+        self.assertIn("docker compose logs tailscale", err)
+
+    def test_failed_up_without_sidecar_has_no_login_hint(self):
+        self.add_component("stacks/other", OTHER_TOML)
+
+        def fake_compose(path, *args, **kwargs):
+            if args[:1] == ("up",):
+                raise cli.CommandError("`docker compose up` exited with 1")
+            return done()
+
+        self.compose.side_effect = fake_compose
+        code, _, err = self.main("--skip-host", "other")
+        self.assertEqual(code, 1)
+        self.assertNotIn("TS_AUTHKEY", err)
+
 if __name__ == "__main__":
     unittest.main()

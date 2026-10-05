@@ -75,7 +75,7 @@ doctor:
 configure:
     docker compose run --rm openclaw-cli configure
 
-# Print the Control UI link with its auth token.
+# Print the gateway's own Control UI link (loopback; use `url` for the tailnet address).
 [group("openclaw")]
 [working-directory("stacks/openclaw")]
 dashboard:

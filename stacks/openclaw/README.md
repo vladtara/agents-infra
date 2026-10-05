@@ -15,7 +15,7 @@ Requests from Serve arrive over loopback with forwarded headers. `init.py` sets 
 ## First login
 
 1. `python3 init.py openclaw` (or `rune install openclaw`) prints the URL.
-2. `rune openclaw::dashboard` prints a link that carries the gateway token. Open it on a device in your tailnet.
+2. Open `https://openclaw.<tailnet>.ts.net` on a device in your tailnet and paste the gateway token (`OPENCLAW_GATEWAY_TOKEN` in `stacks/openclaw/.env`).
 3. The browser shows up as a pending device: `rune openclaw::devices`, then `rune openclaw::approve <requestId>`.
 
 If onboarding was skipped (`init.py --yes`), run `rune openclaw::onboard`.
@@ -57,7 +57,7 @@ Treat `data/config`, `data/auth` and `backups/` as credentials: OAuth tokens are
 | `rune openclaw::doctor` | diagnose config and state |
 | `rune openclaw::configure` | interactive wizard: models, channels, gateway |
 | `rune openclaw::cli <args>` | any `openclaw` command, e.g. `channels list`, `agents list`, `logs` |
-| `rune openclaw::dashboard` | Control UI link with token |
+| `rune openclaw::dashboard` | the gateway's own Control UI link (loopback); remotely use `rune openclaw::url` |
 | `rune openclaw::devices`, `rune openclaw::approve <id>` | pair browsers and apps |
 | `rune openclaw::audit` | security audit |
 | `rune openclaw::backup` | verified archive into `backups/` |
@@ -88,6 +88,7 @@ Most changes apply live (agents, models, channels, tools, skills, plugins, loggi
 
 ## Troubleshooting
 
+- **`init.py` fails after `up --wait`, `tailscale` unhealthy:** the node is not logged in. Set `TS_AUTHKEY` in `stacks/openclaw/.env` (or open the login URL from `docker compose logs tailscale`), then rerun `python3 init.py openclaw`.
 - **URL does not load:** `rune openclaw::url`. "no HTTPS name" means the node is not logged in (`docker compose logs tailscale`) or MagicDNS and HTTPS certificates are off in the admin console.
 - **Gateway lost its network after the sidecar restarted on its own:** `rune openclaw::restart` recreates the gateway in the sidecar's current namespace.
 - **`proxy_attribution_required`:** `gateway.trustedProxies` is missing; rerun `python3 init.py openclaw`.

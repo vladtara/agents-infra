@@ -1,6 +1,6 @@
 # agents-infra
 
-Run and manage AI tools in Docker on a single Linux VM. The repo is cloned on the VM, every tool is a Docker Compose stack, and [Dockge](https://github.com/louislam/dockge) gives a web UI over them. Git stays the source of truth: edits made in Dockge show up in `git diff`. Access goes through [Tailscale](https://tailscale.com) running in containers; nothing listens on public interfaces.
+Run and manage AI tools in Docker on a single Linux VM. The repo is cloned on the VM, every tool is a Docker Compose stack, and [Dockge](https://github.com/louislam/dockge) gives a web UI over them. Git stays the source of truth: edits made in Dockge show up in `git diff`. Access goes through [Tailscale](https://tailscale.com) running in containers; the UIs listen on loopback only and are published on the tailnet.
 
 | Component | What it is | Tailnet address |
 |-----------|------------|-----------------|
@@ -16,7 +16,7 @@ In the [Tailscale admin console](https://login.tailscale.com/admin):
 2. **Settings > Keys:** generate an auth key that is **reusable** and **pre-approved**. `init.py` asks for it once and uses it for both nodes (`agents-vm`, `openclaw`). It is only needed for the first login.
 3. After the first install, open **Machines** and choose **Disable key expiry** for both nodes, or use a tagged auth key (expiry is off for tagged nodes).
 
-If the VM already runs Tailscale from a package, disable it first (`sudo systemctl disable --now tailscaled`): the containerized node uses the same `tailscale0` interface, and `init.py` refuses to continue while it runs.
+If the VM already runs Tailscale from a package, disable it first (`sudo systemctl disable --now tailscaled`): the containerized node uses the same `tailscale0` interface, and `init.py` refuses to continue while it runs. Do this over public SSH or the cloud console, not over that tailnet: it ends the session.
 
 ## Quick start
 
@@ -47,9 +47,11 @@ python3 init.py --skip-host  # components only, no host checks
 
 If Docker was just installed, log out and back in (or run `newgrp docker`) and rerun `init.py`.
 
+If a `tailscale` container stays unhealthy, its node is not logged in: set `TS_AUTHKEY` in that component's `.env` (`tailscale/.env` or `stacks/openclaw/.env`) and rerun `init.py`.
+
 ## Access
 
-Every UI listens on loopback only and is published on the tailnet with Tailscale Serve (HTTPS). Tailscale runs in kernel mode, so tailnet peers reach only what Serve publishes plus the VM's SSH server.
+Every UI listens on loopback only and is published on the tailnet with Tailscale Serve (HTTPS). Tailscale runs in kernel mode, so loopback-only services are reachable from the tailnet only through Serve. Anything listening on all interfaces is reachable from the tailnet too: the VM's sshd, a port a stack publishes on `0.0.0.0`, or a listener started inside the OpenClaw namespace. Limit inbound traffic with a tailnet ACL, for example only `tcp:443` to the `openclaw` node.
 
 - **SSH:** `ssh <user>@agents-vm`, the VM's own sshd over the tailnet. Closing public SSH in your cloud firewall is optional and up to you.
 - **Dockge:** `https://agents-vm.<tailnet>.ts.net`. It asks you to create an admin account on first visit. Without Tailscale: `ssh -L 5001:127.0.0.1:5001 <user>@<public-ip>`, then http://127.0.0.1:5001.

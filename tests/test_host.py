@@ -145,6 +145,9 @@ class EnsureTest(unittest.TestCase):
             self.ensure(tailscale_component=True)
         self.m["install_docker"].assert_not_called()
 
+    def test_conflict_message_warns_that_disabling_ends_a_tailnet_session(self):
+        self.assertIn("public SSH or the cloud console", host.TAILSCALED_CONFLICT)
+
     def test_host_tailscaled_ignored_without_tailscale_component(self):
         self.m["tailscaled_active"].return_value = True
         self.ensure(tailscale_component=False)

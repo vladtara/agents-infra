@@ -19,6 +19,10 @@ NO_HTTPS_HINT = (
     "no HTTPS name yet. Check that the node is logged in (docker compose logs {service}) and that "
     "MagicDNS and HTTPS certificates are enabled in the Tailscale admin console."
 )
+LOGIN_HINT = (
+    "If the {service} container is unhealthy, its node is not logged in: set TS_AUTHKEY in {env} "
+    "(or open the login URL from `docker compose logs {service}`, run in {path}), then rerun init.py."
+)
 
 
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
@@ -123,7 +127,13 @@ def install(component: Component, context: dict[str, str], *, prompt: Callable[[
         if marker:
             marker.parent.mkdir(parents=True, exist_ok=True)
             marker.touch()
-    compose(path, "up", "-d", "--wait", "--wait-timeout", WAIT_TIMEOUT)
+    try:
+        compose(path, "up", "-d", "--wait", "--wait-timeout", WAIT_TIMEOUT)
+    except CommandError as exc:
+        if not component.tailscale_service:
+            raise
+        hint = LOGIN_HINT.format(service=component.tailscale_service, env=component.env_path, path=path)
+        raise CommandError(f"{exc}. {hint}") from exc
     if was_running and ran_setup:
         # Setup steps may rewrite app config read at start. The sidecar stays up:
         # restarting it would cut the namespace out from under the app.

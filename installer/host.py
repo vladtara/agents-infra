@@ -20,7 +20,8 @@ RELOGIN_HINT = (
 TAILSCALED_CONFLICT = (
     "tailscaled is running on the host. It conflicts with the tailscale component, which also "
     "uses the tailscale0 interface. Disable it with `sudo systemctl disable --now tailscaled`, "
-    "or install without the tailscale component."
+    "or install without the tailscale component. If you are connected over that tailnet, run the "
+    "command from public SSH or the cloud console: it ends the session."
 )
 
 
