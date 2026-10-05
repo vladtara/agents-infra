@@ -9,7 +9,7 @@ from pathlib import Path
 
 from installer import components, envfile, host
 from installer.components import Component, ManifestError, SelectionError
-from installer.shell import CommandError, compose, run, sudo
+from installer.shell import CommandError, compose
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -43,19 +43,16 @@ def main(argv: list[str] | None = None, repo: Path = REPO) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
-    tailnet = host.tailnet_hostname()
     context = {
         "repo_dir": str(repo),
         "stacks_dir": str(repo / "stacks"),
         "uid": str(os.getuid()),
         "gid": str(os.getgid()),
-        # Placeholder keeps generated config valid until Tailscale is up; rerun init.py afterwards.
-        "ts_hostname": tailnet or "localhost",
     }
     failed = []
     for component in selected:
         try:
-            install(component, context, tailnet=tailnet, interactive=not args.yes)
+            install(component, context, interactive=not args.yes)
         except (CommandError, OSError) as exc:
             failed.append(f"{component.name}: {exc}")
     for message in failed:
@@ -63,7 +60,7 @@ def main(argv: list[str] | None = None, repo: Path = REPO) -> int:
     return 1 if failed else 0
 
 
-def install(component: Component, context: dict[str, str], *, tailnet: str, interactive: bool) -> None:
+def install(component: Component, context: dict[str, str], *, interactive: bool) -> None:
     """Install or update one component. Every step is idempotent."""
     print(f"\n==> {component.name}: {component.description}")
     path = component.path
@@ -103,13 +100,6 @@ def install(component: Component, context: dict[str, str], *, tailnet: str, inte
     if was_running and ran_setup:
         # Setup steps may rewrite app config that a running service only reads at start.
         compose(path, "restart")
-
-    if component.tailscale_target:
-        print(f"  local:   {component.tailscale_target}/")
-    if component.tailscale_port and tailnet:
-        run(sudo(["tailscale", "serve", "--bg", f"--https={component.tailscale_port}", component.tailscale_target]))
-        port = "" if component.tailscale_port == 443 else f":{component.tailscale_port}"
-        print(f"  tailnet: https://{tailnet}{port}/")
 
 
 def is_running(path: Path) -> bool:

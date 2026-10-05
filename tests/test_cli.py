@@ -1,5 +1,6 @@
 import contextlib
 import io
+import os
 import subprocess
 import tempfile
 import unittest
@@ -27,11 +28,10 @@ once = "data/.onboarded"
 interactive = true
 
 [[setup]]
-run = "run --rm app config set --batch-json '[{\\"origin\\":\\"https://{ts_hostname}\\"}]'"
+run = "run --rm app config set --batch-json '[{\\"uid\\":\\"{uid}\\"}]'"
 
 [tailscale]
-https_port = 8443
-target = "http://127.0.0.1:5001"
+service = "tailscale"
 """
 
 
@@ -51,8 +51,6 @@ class CliCase(unittest.TestCase):
         (self.app / ".env.example").write_text("STACKS_DIR=\nTOKEN=\nAPI_KEY=\nTZ=UTC\n")
 
         self.compose = mock.patch.object(cli, "compose", return_value=done()).start()
-        self.run = mock.patch.object(cli, "run", return_value=done()).start()
-        self.hostname = mock.patch.object(cli.host, "tailnet_hostname", return_value="vm.ts.net").start()
         self.ensure = mock.patch.object(cli.host, "ensure").start()
         self.prompt = mock.patch.object(cli, "ask_secret", return_value="sk-test").start()
         self.addCleanup(mock.patch.stopall)
@@ -97,7 +95,7 @@ class InstallTest(CliCase):
         self.ensure.assert_not_called()
 
     def test_full_install_flow(self):
-        code, out, _ = self.main("--skip-host", "app")
+        code, _, _ = self.main("--skip-host", "app")
         self.assertEqual(code, 0)
 
         env = envfile.parse((self.app / ".env").read_text())
@@ -112,15 +110,10 @@ class InstallTest(CliCase):
                 ("pull",),
                 ("run", "--rm", "app", "chown"),
                 ("run", "--rm", "app", "onboard"),
-                ("run", "--rm", "app", "config", "set", "--batch-json", '[{"origin":"https://vm.ts.net"}]'),
+                ("run", "--rm", "app", "config", "set", "--batch-json", '[{"uid":"%d"}]' % os.getuid()),
                 ("up", "-d"),
             ],
         )
-        self.assertEqual(
-            self.run.call_args.args[0][-4:],
-            ["serve", "--bg", "--https=8443", "http://127.0.0.1:5001"],
-        )
-        self.assertIn("https://vm.ts.net:8443/", out)
 
     def test_restarts_already_running_stack_after_setup(self):
         def fake_compose(path, *args, **kwargs):
@@ -159,15 +152,6 @@ class InstallTest(CliCase):
         code, _, _ = self.main("--skip-host", "app")
         self.assertEqual(code, 1)
         self.assertFalse((self.app / "data" / ".onboarded").exists())
-
-    def test_without_tailscale_uses_localhost_placeholder_and_no_serve(self):
-        self.hostname.return_value = ""
-        self.main("--skip-host", "app")
-        self.assertIn(
-            ("run", "--rm", "app", "config", "set", "--batch-json", '[{"origin":"https://localhost"}]'),
-            self.compose_calls(),
-        )
-        self.run.assert_not_called()
 
     def test_failed_component_reports_and_exits_non_zero(self):
         self.compose.side_effect = cli.CommandError("`docker compose pull` exited with 1")

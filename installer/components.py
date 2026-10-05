@@ -16,7 +16,8 @@ NAME_RE = re.compile(r"^[a-z0-9_-]+$")
 TOP_KEYS = {"description", "order", "dirs", "env", "setup", "tailscale"}
 ENV_KEYS = {"set", "generate", "ask"}
 STEP_KEYS = {"run", "once", "interactive"}
-TAILSCALE_KEYS = {"https_port", "target"}
+TAILSCALE_KEYS = {"service"}
+INFRA_DIRS = ("tailscale", "dockge")
 
 
 class ManifestError(ValueError):
@@ -51,8 +52,7 @@ class Component:
     env_generate: tuple[str, ...] = ()
     env_ask: tuple[str, ...] = ()
     setup: tuple[Step, ...] = ()
-    tailscale_port: int | None = None
-    tailscale_target: str | None = None
+    tailscale_service: str | None = None
 
     @property
     def env_example(self) -> Path:
@@ -64,8 +64,8 @@ class Component:
 
 
 def discover(repo: Path) -> list[Component]:
-    """Load dockge/ and every stacks/<name>/ that has a component.toml, in install order."""
-    candidates = [repo / "dockge", *sorted((repo / "stacks").glob("*/"))]
+    """Load the infra components and every stacks/<name>/ that has a component.toml, in install order."""
+    candidates = [*(repo / name for name in INFRA_DIRS), *sorted((repo / "stacks").glob("*/"))]
     found = [load(path) for path in candidates if (path / "component.toml").is_file()]
     names = [c.name for c in found]
     duplicates = sorted({n for n in names if names.count(n) > 1})
@@ -131,14 +131,12 @@ def load(path: Path) -> Component:
         _check_relative(rel, "dirs", where)
 
     tailscale = data.get("tailscale")
-    port = target = None
+    service = None
     if tailscale is not None:
         _check_keys(tailscale, TAILSCALE_KEYS, f"{where} [tailscale]")
-        port, target = tailscale.get("https_port"), tailscale.get("target")
-        if not isinstance(port, int) or isinstance(port, bool) or not 1 <= port <= 65535:
-            raise ManifestError(f"{where}: 'tailscale.https_port' must be a port number")
-        if not isinstance(target, str):
-            raise ManifestError(f"{where}: 'tailscale.target' (string) is required")
+        service = tailscale.get("service")
+        if not isinstance(service, str) or not service:
+            raise ManifestError(f"{where}: 'tailscale.service' (compose service name) is required")
 
     return Component(
         name=name,
@@ -150,8 +148,7 @@ def load(path: Path) -> Component:
         env_generate=tuple(generate),
         env_ask=tuple(ask),
         setup=tuple(_step(raw, where) for raw in data.get("setup", [])),
-        tailscale_port=port,
-        tailscale_target=target,
+        tailscale_service=service,
     )
 
 

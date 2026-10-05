@@ -19,11 +19,6 @@ once = "data/.onboarded"
 interactive = true
 
 # Pinned after onboarding on every install; rateLimit clears the security
-# audit warning. Rerun init.py after `tailscale up` so the tailnet origin
-# replaces the localhost placeholder.
+# audit warning.
 [[setup]]
-run = '''run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set --batch-json '[{"path":"gateway.mode","value":"local"},{"path":"gateway.bind","value":"lan"},{"path":"gateway.controlUi.allowedOrigins","value":["http://localhost:18789","http://127.0.0.1:18789","https://{ts_hostname}"]},{"path":"gateway.auth.rateLimit","value":{"maxAttempts":10,"windowMs":60000,"lockoutMs":300000}}]' '''
-
-[tailscale]
-https_port = 443
-target = "http://127.0.0.1:18789"
+run = '''run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set --batch-json '[{"path":"gateway.mode","value":"local"},{"path":"gateway.bind","value":"lan"},{"path":"gateway.controlUi.allowedOrigins","value":["http://localhost:18789","http://127.0.0.1:18789"]},{"path":"gateway.auth.rateLimit","value":{"maxAttempts":10,"windowMs":60000,"lockoutMs":300000}}]' '''

@@ -12,7 +12,7 @@ order = 20
 dirs = ["data/config"]
 
 [env]
-set = { HOST = "{ts_hostname}" }
+set = { HOST = "{uid}" }
 generate = ["TOKEN"]
 ask = ["API_KEY"]
 
@@ -25,8 +25,7 @@ once = "data/.onboarded"
 interactive = true
 
 [tailscale]
-https_port = 443
-target = "http://127.0.0.1:18789"
+service = "tailscale"
 """
 
 
@@ -57,7 +56,7 @@ class LoadTest(RepoCase):
         self.assertEqual(comp.description, "Assistant")
         self.assertEqual(comp.order, 20)
         self.assertEqual(comp.dirs, ("data/config",))
-        self.assertEqual(comp.env_set, {"HOST": "{ts_hostname}"})
+        self.assertEqual(comp.env_set, {"HOST": "{uid}"})
         self.assertEqual(comp.env_generate, ("TOKEN",))
         self.assertEqual(comp.env_ask, ("API_KEY",))
         self.assertEqual(len(comp.setup), 2)
@@ -65,14 +64,13 @@ class LoadTest(RepoCase):
         self.assertFalse(comp.setup[0].interactive)
         self.assertEqual(comp.setup[1].once, "data/.onboarded")
         self.assertTrue(comp.setup[1].interactive)
-        self.assertEqual(comp.tailscale_port, 443)
-        self.assertEqual(comp.tailscale_target, "http://127.0.0.1:18789")
+        self.assertEqual(comp.tailscale_service, "tailscale")
 
     def test_minimal_manifest_defaults(self):
         comp = components.load(self.add("stacks/tiny", 'description = "x"\n', env_example=None))
         self.assertEqual(comp.order, 100)
         self.assertEqual((comp.dirs, comp.setup, comp.env_set), ((), (), {}))
-        self.assertIsNone(comp.tailscale_port)
+        self.assertIsNone(comp.tailscale_service)
 
     def assert_invalid(self, toml, message, **kwargs):
         with self.assertRaisesRegex(ManifestError, message):
@@ -90,7 +88,8 @@ class LoadTest(RepoCase):
     def test_rejects_bad_types(self):
         self.assert_invalid('description = "x"\norder = "1"\n', "order")
         self.assert_invalid('description = "x"\ndirs = "data"\n', "dirs")
-        self.assert_invalid('description = "x"\n[tailscale]\nhttps_port = 0\ntarget = "t"\n', "https_port")
+        self.assert_invalid('description = "x"\n[tailscale]\nservice = 1\n', "tailscale.service")
+        self.assert_invalid('description = "x"\n[tailscale]\nhttps_port = 443\n', "unknown key.*https_port")
 
     def test_rejects_paths_outside_component(self):
         self.assert_invalid('description = "x"\ndirs = ["../etc"]\n', "dirs")
@@ -110,13 +109,14 @@ class LoadTest(RepoCase):
 
 
 class DiscoverTest(RepoCase):
-    def test_finds_dockge_and_stacks_sorted_by_order_then_name(self):
+    def test_finds_infra_and_stacks_sorted_by_order_then_name(self):
         self.add("dockge", 'description = "d"\norder = 10\n')
+        self.add("tailscale", 'description = "t"\norder = 5\n')
         self.add("stacks/zeta", 'description = "z"\norder = 20\n')
         self.add("stacks/alpha", 'description = "a"\norder = 20\n')
         (self.repo / "stacks" / "not-a-component").mkdir()
         names = [c.name for c in components.discover(self.repo)]
-        self.assertEqual(names, ["dockge", "alpha", "zeta"])
+        self.assertEqual(names, ["tailscale", "dockge", "alpha", "zeta"])
 
     def test_rejects_duplicate_names(self):
         self.add("dockge", 'description = "d"\n')
@@ -146,9 +146,18 @@ class SelectTest(RepoCase):
 
 class ExpandTest(unittest.TestCase):
     def test_replaces_known_placeholders_only(self):
-        text = '[{"path":"x","value":"https://{ts_hostname}"}] {unknown}'
-        out = components.expand(text, {"ts_hostname": "vm.ts.net"})
-        self.assertEqual(out, '[{"path":"x","value":"https://vm.ts.net"}] {unknown}')
+        text = '[{"path":"x","value":"{uid}"}] {unknown}'
+        out = components.expand(text, {"uid": "1000"})
+        self.assertEqual(out, '[{"path":"x","value":"1000"}] {unknown}')
+
+
+REPO = Path(__file__).resolve().parent.parent
+
+
+class RepoManifestTest(unittest.TestCase):
+    def test_shipped_components_load_in_install_order(self):
+        names = [c.name for c in components.discover(REPO)]
+        self.assertEqual(names, ["dockge", "openclaw"])
 
 
 if __name__ == "__main__":
