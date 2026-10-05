@@ -11,6 +11,7 @@ services:
       - "${STACKS_DIR:?run init.py first}:${STACKS_DIR:?run init.py first}"
     environment:
       DOCKGE_STACKS_DIR: "${STACKS_DIR:?run init.py first}"
+      DOCKGE_ENABLE_CONSOLE: true
       PUID: "${PUID:-1000}"
       PGID: "${PGID:-1000}"
       TZ: "${TZ:-UTC}"
