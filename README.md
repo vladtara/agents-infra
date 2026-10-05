@@ -71,10 +71,10 @@ rune validate                  # docker compose config for every component
 rune update                    # git pull, then each installed component's update (Tailscale last; use tmux over tailnet SSH)
 rune test                      # installer unit tests
 
-rune tailscale::up | down | logs | status
+rune tailscale::up | down | logs | status | update
 rune dockge::up | down | logs | update
 rune openclaw::up | down | restart | logs | update
-rune openclaw::shell | tui | status | doctor | configure | backup | url
+rune openclaw::shell | tui | status | doctor | configure | onboard | backup | url
 rune openclaw::cli channels list
 ```
 
