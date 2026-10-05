@@ -1,5 +1,6 @@
 import contextlib
 import io
+import json
 import os
 import subprocess
 import tempfile
@@ -33,6 +34,16 @@ run = "run --rm app config set --batch-json '[{\\"uid\\":\\"{uid}\\"}]'"
 [tailscale]
 service = "tailscale"
 """
+
+OTHER_TOML = """\
+description = "Other"
+order = 30
+
+[env]
+ask = ["API_KEY"]
+"""
+
+UP = ("up", "-d", "--wait", "--wait-timeout", "180")
 
 
 def done(stdout=""):
@@ -125,18 +136,22 @@ class InstallTest(CliCase):
                 ("pull",),
                 ("run", "--rm", "app", "chown"),
                 ("run", "--rm", "app", "onboard"),
-                ("run", "--rm", "app", "config", "set", "--batch-json", '[{"uid":"%d"}]' % os.getuid()),
-                ("up", "-d"),
+                ("run", "--rm", "app", "config", "set", "--batch-json", f'[{{"uid":"{os.getuid()}"}}]'),
+                UP,
             ],
         )
 
-    def test_restarts_already_running_stack_after_setup(self):
+    def test_restarts_running_stack_after_setup_except_the_sidecar(self):
         def fake_compose(path, *args, **kwargs):
-            return done("abc123\n") if args[:1] == ("ps",) else done()
+            if args[:1] == ("ps",):
+                return done("abc123\n")
+            if args[:2] == ("config", "--services"):
+                return done("app\ntailscale\n")
+            return done()
 
         self.compose.side_effect = fake_compose
         self.main("--skip-host", "app")
-        self.assertEqual(self.compose_calls()[-2:], [("up", "-d"), ("restart",)])
+        self.assertEqual(self.compose_calls()[-2:], [UP, ("restart", "app")])
 
     def test_rerun_keeps_secrets_and_skips_done_steps(self):
         self.main("--skip-host", "app")
@@ -173,6 +188,56 @@ class InstallTest(CliCase):
         code, _, err = self.main("--skip-host", "app")
         self.assertEqual(code, 1)
         self.assertIn("app: `docker compose pull` exited with 1", err)
+
+
+    def test_same_secret_is_asked_once_per_run(self):
+        other = self.add_component("stacks/other", OTHER_TOML)
+        self.main("--skip-host")
+        self.prompt.assert_called_once_with("API_KEY")
+        self.assertEqual(envfile.parse((other / ".env").read_text())["API_KEY"], "sk-test")
+
+    def test_prints_tailnet_url_from_sidecar(self):
+        def fake_compose(path, *args, **kwargs):
+            if args[:2] == ("exec", "-T"):
+                return done(json.dumps({"CertDomains": ["app.tail1234.ts.net"]}))
+            return done()
+
+        self.compose.side_effect = fake_compose
+        _, out, _ = self.main("--skip-host", "app")
+        self.assertIn("tailnet: https://app.tail1234.ts.net/", out)
+        exec_calls = [c.args[1:] for c in self.compose.call_args_list if c.args[1:3] == ("exec", "-T")]
+        self.assertEqual(exec_calls, [("exec", "-T", "tailscale", "tailscale", "status", "--json")])
+
+    def test_warns_when_tailnet_has_no_https_name(self):
+        def fake_compose(path, *args, **kwargs):
+            if args[:2] == ("exec", "-T"):
+                return done(json.dumps({"CertDomains": None}))
+            return done()
+
+        self.compose.side_effect = fake_compose
+        code, out, _ = self.main("--skip-host", "app")
+        self.assertEqual(code, 0)
+        self.assertIn("MagicDNS and HTTPS certificates", out)
+
+    def test_warns_when_status_is_not_json(self):
+        code, out, _ = self.main("--skip-host", "app")
+        self.assertEqual(code, 0)
+        self.assertIn("MagicDNS and HTTPS certificates", out)
+
+    def test_failed_component_does_not_stop_the_next(self):
+        other = self.add_component("stacks/other", OTHER_TOML)
+
+        def fake_compose(path, *args, **kwargs):
+            if path == self.app and args[:1] == ("up",):
+                raise cli.CommandError("`docker compose up` exited with 1")
+            return done()
+
+        self.compose.side_effect = fake_compose
+        code, _, err = self.main("--skip-host")
+        self.assertEqual(code, 1)
+        self.assertIn("app: `docker compose up` exited with 1", err)
+        up_paths = [c.args[0] for c in self.compose.call_args_list if c.args[1:2] == ("up",)]
+        self.assertIn(other, up_paths)
 
 
 if __name__ == "__main__":

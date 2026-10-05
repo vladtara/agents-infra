@@ -2,9 +2,11 @@
 
 import argparse
 import getpass
+import json
 import os
 import shlex
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from installer import components, envfile, host
@@ -12,6 +14,11 @@ from installer.components import Component, ManifestError, SelectionError
 from installer.shell import CommandError, compose
 
 REPO = Path(__file__).resolve().parent.parent
+WAIT_TIMEOUT = "180"
+NO_HTTPS_HINT = (
+    "no HTTPS name yet. Check that the node is logged in (docker compose logs {service}) and that "
+    "MagicDNS and HTTPS certificates are enabled in the Tailscale admin console."
+)
 
 
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
@@ -53,10 +60,11 @@ def main(argv: list[str] | None = None, repo: Path = REPO) -> int:
         "uid": str(os.getuid()),
         "gid": str(os.getgid()),
     }
+    prompt = None if args.yes else remembering(ask_secret)
     failed = []
     for component in selected:
         try:
-            install(component, context, interactive=not args.yes)
+            install(component, context, prompt=prompt)
         except (CommandError, OSError) as exc:
             failed.append(f"{component.name}: {exc}")
     for message in failed:
@@ -64,8 +72,23 @@ def main(argv: list[str] | None = None, repo: Path = REPO) -> int:
     return 1 if failed else 0
 
 
-def install(component: Component, context: dict[str, str], *, interactive: bool) -> None:
-    """Install or update one component. Every step is idempotent."""
+def remembering(ask: Callable[[str], str]) -> Callable[[str], str]:
+    """Wrap ask so each key is asked once per run, even when several components need it."""
+    answers: dict[str, str] = {}
+
+    def prompt(key: str) -> str:
+        if key not in answers:
+            answers[key] = ask(key)
+        return answers[key]
+
+    return prompt
+
+
+def install(component: Component, context: dict[str, str], *, prompt: Callable[[str], str] | None) -> None:
+    """Install or update one component. Every step is idempotent.
+
+    prompt asks for missing secrets; None means non-interactive (--yes).
+    """
     print(f"\n==> {component.name}: {component.description}")
     path = component.path
 
@@ -77,7 +100,7 @@ def install(component: Component, context: dict[str, str], *, interactive: bool)
             set_values={key: components.expand(value, context) for key, value in component.env_set.items()},
             generate=component.env_generate,
             ask=component.env_ask,
-            prompt=ask_secret if interactive else None,
+            prompt=prompt,
         )
         envfile.write(component.env_path, text)
         print("  wrote .env")
@@ -92,7 +115,7 @@ def install(component: Component, context: dict[str, str], *, interactive: bool)
         marker = path / step.once if step.once else None
         if marker and marker.exists():
             continue
-        if step.interactive and not interactive:
+        if step.interactive and prompt is None:
             print(f"  skipped interactive step (--yes), run later: docker compose {step.run}")
             continue
         compose(path, *shlex.split(components.expand(step.run, context)))
@@ -100,10 +123,29 @@ def install(component: Component, context: dict[str, str], *, interactive: bool)
         if marker:
             marker.parent.mkdir(parents=True, exist_ok=True)
             marker.touch()
-    compose(path, "up", "-d")
+    compose(path, "up", "-d", "--wait", "--wait-timeout", WAIT_TIMEOUT)
     if was_running and ran_setup:
-        # Setup steps may rewrite app config that a running service only reads at start.
-        compose(path, "restart")
+        # Setup steps may rewrite app config read at start. The sidecar stays up:
+        # restarting it would cut the namespace out from under the app.
+        services = compose(path, "config", "--services", capture=True).stdout.split()
+        compose(path, "restart", *[s for s in services if s != component.tailscale_service])
+
+    if component.tailscale_service:
+        url = tailnet_url(component)
+        print(f"  tailnet: {url or NO_HTTPS_HINT.format(service=component.tailscale_service)}")
+
+
+def tailnet_url(component: Component) -> str:
+    """https URL of the component's Tailscale node, or "" while it has no HTTPS name."""
+    result = compose(
+        component.path, "exec", "-T", component.tailscale_service, "tailscale", "status", "--json",
+        capture=True, check=False,
+    )
+    try:
+        domains = json.loads(result.stdout).get("CertDomains") or []
+    except (json.JSONDecodeError, AttributeError):
+        return ""
+    return f"https://{domains[0]}/" if domains else ""
 
 
 def is_running(path: Path) -> bool:
