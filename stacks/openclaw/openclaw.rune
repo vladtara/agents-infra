@@ -35,7 +35,7 @@ update:
 [working-directory("stacks/openclaw")]
 [confirm("Rerun OpenClaw onboarding? It can change existing settings.")]
 onboard:
-    docker compose run --rm --entrypoint node openclaw-gateway dist/index.js onboard --mode local --no-install-daemon --gateway-auth token --gateway-token-ref-env OPENCLAW_GATEWAY_TOKEN --skip-ui --suppress-gateway-token-output
+    docker compose run --rm --entrypoint node openclaw-gateway dist/index.js onboard --mode local --no-install-daemon --secret-input-mode ref --gateway-auth token --gateway-token-ref-env OPENCLAW_GATEWAY_TOKEN --skip-ui --suppress-gateway-token-output
     touch data/.onboarded
     docker compose restart openclaw-gateway
 

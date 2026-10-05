@@ -181,5 +181,14 @@ class RepoManifestTest(unittest.TestCase):
             self.assertIn(pinned, config_step)
         self.assertNotIn("--no-deps", " ".join(step.run for step in openclaw.setup))
 
+    def test_openclaw_onboarding_keeps_keys_in_env_and_has_headless_variant(self):
+        openclaw = {c.name: c for c in components.discover(REPO)}["openclaw"]
+        onboard = next(step for step in openclaw.setup if step.once == "data/.onboarded")
+        self.assertIn("--secret-input-mode ref", onboard.run)
+        self.assertIn("--non-interactive --accept-risk", onboard.headless)
+        self.assertIn("--secret-input-mode ref", onboard.headless)
+        self.assertIn('"gateway.tailscale.mode","value":"off"', openclaw.setup[-1].run)
+        self.assertIn("--secret-input-mode ref", (REPO / "stacks/openclaw/openclaw.rune").read_text())
+
 if __name__ == "__main__":
     unittest.main()

@@ -14,16 +14,21 @@ ask = ["TS_AUTHKEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"]
 [[setup]]
 run = '''run --rm --user root --entrypoint sh openclaw-gateway -c 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; export PATH; /usr/bin/find -P /home/node/.openclaw -xdev \( ! -path /home/node/.openclaw/workspace -o -prune \) -execdir /usr/bin/chown -h node:node {} +; /usr/bin/chown -h node:node /home/node/.config /home/node/backups; /usr/bin/find -P /home/node/.config/openclaw -xdev -execdir /usr/bin/chown -h node:node {} +; if [ -d /home/node/.openclaw/workspace/.openclaw ] && [ ! -L /home/node/.openclaw/workspace/.openclaw ]; then /usr/bin/find -P /home/node/.openclaw/workspace/.openclaw -xdev -execdir /usr/bin/chown -h node:node {} +; fi || true' '''
 
+# Onboarding stores API keys as env references (--secret-input-mode ref), so
+# they live only in .env. With --yes the headless variant picks the provider
+# from the keys in .env.
 [[setup]]
-run = "run --rm --entrypoint node openclaw-gateway dist/index.js onboard --mode local --no-install-daemon --gateway-auth token --gateway-token-ref-env OPENCLAW_GATEWAY_TOKEN --skip-ui --suppress-gateway-token-output"
+run = "run --rm --entrypoint node openclaw-gateway dist/index.js onboard --mode local --no-install-daemon --secret-input-mode ref --gateway-auth token --gateway-token-ref-env OPENCLAW_GATEWAY_TOKEN --skip-ui --suppress-gateway-token-output"
 once = "data/.onboarded"
 interactive = true
+headless = '''run -T --rm --entrypoint sh openclaw-gateway -c 'if [ -n "$ANTHROPIC_API_KEY" ]; then set -- --auth-choice apiKey --anthropic-api-key "$ANTHROPIC_API_KEY"; elif [ -n "$OPENAI_API_KEY" ]; then set -- --auth-choice openai-api-key; else echo "Set ANTHROPIC_API_KEY or OPENAI_API_KEY in stacks/openclaw/.env, then rerun init.py" >&2; exit 1; fi; exec node dist/index.js onboard --non-interactive --accept-risk --skip-health --mode local --secret-input-mode ref --gateway-auth token --gateway-token-ref-env OPENCLAW_GATEWAY_TOKEN --skip-channels --no-install-daemon "$@"' '''
 
 # Infra keys, pinned after onboarding on every install. Serve reaches the
 # loopback-bound gateway from 127.0.0.1 with forwarded headers, hence
-# trustedProxies. Logs go to the mounted state dir instead of /tmp.
+# trustedProxies. Managed Tailscale stays off: the sidecar owns Serve and the
+# image has no tailscale CLI. Logs go to the mounted state dir instead of /tmp.
 [[setup]]
-run = '''run --rm --entrypoint node openclaw-gateway dist/index.js config set --batch-json '[{"path":"gateway.mode","value":"local"},{"path":"gateway.bind","value":"loopback"},{"path":"gateway.trustedProxies","value":["127.0.0.1"]},{"path":"gateway.auth.rateLimit","value":{"maxAttempts":10,"windowMs":60000,"lockoutMs":300000}},{"path":"logging.file","value":"/home/node/.openclaw/logs/openclaw.log"}]' '''
+run = '''run --rm --entrypoint node openclaw-gateway dist/index.js config set --batch-json '[{"path":"gateway.mode","value":"local"},{"path":"gateway.bind","value":"loopback"},{"path":"gateway.trustedProxies","value":["127.0.0.1"]},{"path":"gateway.tailscale.mode","value":"off"},{"path":"gateway.auth.rateLimit","value":{"maxAttempts":10,"windowMs":60000,"lockoutMs":300000}},{"path":"logging.file","value":"/home/node/.openclaw/logs/openclaw.log"}]' '''
 
 [tailscale]
 service = "tailscale"
