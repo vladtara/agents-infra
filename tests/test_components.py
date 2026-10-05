@@ -83,6 +83,11 @@ class LoadTest(RepoCase):
         self.assert_invalid('description = "x"\n[[setup]]\nrun = "a"\nheadless = "b"\n', "headless.*interactive")
         self.assert_invalid('description = "x"\n[[setup]]\nrun = "a"\ninteractive = true\nheadless = 1\n', "headless")
 
+    def test_step_note(self):
+        comp = components.load(self.add("stacks/nt", 'description = "x"\n[[setup]]\nrun = "a"\nnote = "hi"\n', env_example=None))
+        self.assertEqual(comp.setup[0].note, "hi")
+        self.assert_invalid('description = "x"\n[[setup]]\nrun = "a"\nnote = 1\n', "note")
+
     def test_rejects_unknown_keys(self):
         self.assert_invalid('description = "x"\nport = 1\n', "unknown key.*port")
         self.assert_invalid('description = "x"\n[env]\nsecret = []\n', "unknown key.*secret")
@@ -189,6 +194,7 @@ class RepoManifestTest(unittest.TestCase):
         self.assertIn("--secret-input-mode ref", onboard.headless)
         self.assertIn('"gateway.tailscale.mode","value":"off"', openclaw.setup[-1].run)
         self.assertIn("--secret-input-mode ref", (REPO / "stacks/openclaw/openclaw.rune").read_text())
+        self.assertIn("Gateway not detected yet", onboard.note)
 
 if __name__ == "__main__":
     unittest.main()

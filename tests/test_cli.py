@@ -27,6 +27,7 @@ run = "run --rm app chown"
 run = "run --rm app onboard"
 once = "data/.onboarded"
 interactive = true
+note = "wizard ends early"
 
 [[setup]]
 run = "run --rm app config set --batch-json '[{\\"uid\\":\\"{uid}\\"}]'"
@@ -207,33 +208,48 @@ class InstallTest(CliCase):
         self.prompt.assert_called_once_with("API_KEY")
         self.assertEqual(envfile.parse((other / ".env").read_text())["API_KEY"], "sk-test")
 
-    def test_prints_tailnet_url_from_sidecar(self):
+    def sidecar_status(self, status):
         def fake_compose(path, *args, **kwargs):
             if args[:2] == ("exec", "-T"):
-                return done(json.dumps({"CertDomains": ["app.tail1234.ts.net"]}))
+                return done(json.dumps(status))
             return done()
 
         self.compose.side_effect = fake_compose
+
+    def test_prints_tailnet_url_from_sidecar(self):
+        self.sidecar_status({"BackendState": "Running", "CertDomains": ["app.tail1234.ts.net"]})
         _, out, _ = self.main("--skip-host", "app")
         self.assertIn("tailnet: https://app.tail1234.ts.net/", out)
+        self.assertNotIn("Action needed", out)
         exec_calls = [c.args[1:] for c in self.compose.call_args_list if c.args[1:3] == ("exec", "-T")]
         self.assertEqual(exec_calls, [("exec", "-T", "tailscale", "tailscale", "status", "--json")])
 
-    def test_warns_when_tailnet_has_no_https_name(self):
-        def fake_compose(path, *args, **kwargs):
-            if args[:2] == ("exec", "-T"):
-                return done(json.dumps({"CertDomains": None}))
-            return done()
-
-        self.compose.side_effect = fake_compose
+    def test_https_off_is_named_and_repeated_at_the_end(self):
+        self.sidecar_status({"BackendState": "Running", "CertDomains": None})
         code, out, _ = self.main("--skip-host", "app")
         self.assertEqual(code, 0)
-        self.assertIn("MagicDNS and HTTPS certificates", out)
+        self.assertIn("HTTPS certificates are off in your tailnet", out)
+        action = out[out.index("Action needed"):]
+        self.assertIn("app: HTTPS certificates are off", action)
+        self.assertIn("https://login.tailscale.com/admin/dns", action)
 
-    def test_warns_when_status_is_not_json(self):
+    def test_logged_out_node_points_at_the_auth_key(self):
+        self.sidecar_status({"BackendState": "NeedsLogin"})
+        _, out, _ = self.main("--skip-host", "app")
+        action = out[out.index("Action needed"):]
+        self.assertIn("node is not logged in", action)
+        self.assertIn(f"TS_AUTHKEY in {self.app / '.env'}", action)
+
+    def test_unreadable_status_counts_as_not_logged_in(self):
         code, out, _ = self.main("--skip-host", "app")
         self.assertEqual(code, 0)
-        self.assertIn("MagicDNS and HTTPS certificates", out)
+        self.assertIn("node is not logged in", out)
+
+    def test_step_note_is_printed_only_when_the_step_runs(self):
+        _, out, _ = self.main("--skip-host", "--yes", "app")
+        self.assertNotIn("note: wizard ends early", out)
+        _, out, _ = self.main("--skip-host", "app")
+        self.assertIn("note: wizard ends early", out)
 
     def test_failed_component_does_not_stop_the_next(self):
         other = self.add_component("stacks/other", OTHER_TOML)

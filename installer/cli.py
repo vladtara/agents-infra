@@ -15,13 +15,16 @@ from installer.shell import CommandError, compose
 
 REPO = Path(__file__).resolve().parent.parent
 WAIT_TIMEOUT = "180"
-NO_HTTPS_HINT = (
-    "no HTTPS name yet. Check that the node is logged in (docker compose logs {service}) and that "
-    "MagicDNS and HTTPS certificates are enabled in the Tailscale admin console."
+LOGIN_FIX = (
+    "set TS_AUTHKEY in {env} (or open the login URL from `docker compose logs {service}`, run in {path}), "
+    "then rerun init.py."
 )
-LOGIN_HINT = (
-    "If the {service} container is unhealthy, its node is not logged in: set TS_AUTHKEY in {env} "
-    "(or open the login URL from `docker compose logs {service}`, run in {path}), then rerun init.py."
+LOGIN_HINT = "If the {service} container is unhealthy, its node is not logged in: " + LOGIN_FIX
+NOT_LOGGED_IN = "the {service} node is not logged in: " + LOGIN_FIX
+HTTPS_OFF = (
+    "HTTPS certificates are off in your tailnet, so Serve is not applied and the URL does not load. "
+    "Enable them at https://login.tailscale.com/admin/dns (HTTPS Certificates > Enable HTTPS); "
+    "the node picks it up within a minute, no restart needed."
 )
 
 
@@ -65,12 +68,17 @@ def main(argv: list[str] | None = None, repo: Path = REPO) -> int:
         "gid": str(os.getgid()),
     }
     prompt = None if args.yes else remembering(ask_secret)
-    failed = []
+    failed, actions = [], []
     for component in selected:
         try:
-            install(component, context, prompt=prompt)
+            actions += [f"{component.name}: {problem}" for problem in install(component, context, prompt=prompt)]
         except (CommandError, OSError) as exc:
             failed.append(f"{component.name}: {exc}")
+    if actions:
+        # Repeated at the end so it is not lost in the docker output above.
+        print("\nAction needed:")
+        for action in actions:
+            print(f"  - {action}")
     for message in failed:
         print(f"error: {message}", file=sys.stderr)
     return 1 if failed else 0
@@ -88,10 +96,11 @@ def remembering(ask: Callable[[str], str]) -> Callable[[str], str]:
     return prompt
 
 
-def install(component: Component, context: dict[str, str], *, prompt: Callable[[str], str] | None) -> None:
+def install(component: Component, context: dict[str, str], *, prompt: Callable[[str], str] | None) -> list[str]:
     """Install or update one component. Every step is idempotent.
 
     prompt asks for missing secrets; None means non-interactive (--yes).
+    Returns problems the user has to act on (for example tailnet access).
     """
     print(f"\n==> {component.name}: {component.description}")
     path = component.path
@@ -125,6 +134,8 @@ def install(component: Component, context: dict[str, str], *, prompt: Callable[[
                 print(f"  skipped interactive step (--yes), run later: docker compose {step.run}")
                 continue
             run = step.headless
+        if step.note:
+            print(f"  note: {step.note}")
         compose(path, *shlex.split(components.expand(run, context)))
         ran_setup = True
         if marker:
@@ -143,22 +154,27 @@ def install(component: Component, context: dict[str, str], *, prompt: Callable[[
         services = compose(path, "config", "--services", capture=True).stdout.split()
         compose(path, "restart", *[s for s in services if s != component.tailscale_service])
 
-    if component.tailscale_service:
-        url = tailnet_url(component)
-        print(f"  tailnet: {url or NO_HTTPS_HINT.format(service=component.tailscale_service)}")
+    if not component.tailscale_service:
+        return []
+    url, problem = tailnet_check(component)
+    print(f"  tailnet: {url or problem}")
+    return [problem] if problem else []
 
 
-def tailnet_url(component: Component) -> str:
-    """https URL of the component's Tailscale node, or "" while it has no HTTPS name."""
-    result = compose(
-        component.path, "exec", "-T", component.tailscale_service, "tailscale", "status", "--json",
-        capture=True, check=False,
-    )
+def tailnet_check(component: Component) -> tuple[str, str]:
+    """(https URL, "") for a ready node, or ("", what blocks it)."""
+    service = component.tailscale_service
+    result = compose(component.path, "exec", "-T", service, "tailscale", "status", "--json", capture=True, check=False)
     try:
-        domains = json.loads(result.stdout).get("CertDomains") or []
-    except (json.JSONDecodeError, AttributeError):
-        return ""
-    return f"https://{domains[0]}/" if domains else ""
+        status = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        status = None
+    if not isinstance(status, dict) or status.get("BackendState") != "Running":
+        return "", NOT_LOGGED_IN.format(service=service, env=component.env_path, path=component.path)
+    domains = status.get("CertDomains") or []
+    if not domains:
+        return "", HTTPS_OFF
+    return f"https://{domains[0]}/", ""
 
 
 def is_running(path: Path) -> bool:

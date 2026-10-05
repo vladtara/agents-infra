@@ -21,6 +21,7 @@ run = '''run --rm --user root --entrypoint sh openclaw-gateway -c 'PATH=/usr/loc
 run = "run --rm --entrypoint node openclaw-gateway dist/index.js onboard --mode local --no-install-daemon --secret-input-mode ref --gateway-auth token --gateway-token-ref-env OPENCLAW_GATEWAY_TOKEN --skip-ui --suppress-gateway-token-output"
 once = "data/.onboarded"
 interactive = true
+note = "the wizard ends with 'Gateway not detected yet. Start now: openclaw gateway run'. That is expected: it runs in a one-off container and init.py starts the gateway right after."
 headless = '''run -T --rm --entrypoint sh openclaw-gateway -c 'if [ -n "$ANTHROPIC_API_KEY" ]; then set -- --auth-choice apiKey --anthropic-api-key "$ANTHROPIC_API_KEY"; elif [ -n "$OPENAI_API_KEY" ]; then set -- --auth-choice openai-api-key; else echo "Set ANTHROPIC_API_KEY or OPENAI_API_KEY in stacks/openclaw/.env, then rerun init.py" >&2; exit 1; fi; exec node dist/index.js onboard --non-interactive --accept-risk --skip-health --mode local --secret-input-mode ref --gateway-auth token --gateway-token-ref-env OPENCLAW_GATEWAY_TOKEN --skip-channels --no-install-daemon "$@"' '''
 
 # Infra keys, pinned after onboarding on every install. Serve reaches the
