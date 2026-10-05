@@ -24,8 +24,10 @@ validate:
 test:
     python3 -m unittest discover -s tests
 
-# Pull git changes, then pull images and recreate every installed component.
-[confirm("Pull git changes and recreate all installed components?")]
+# Pull git changes, then run each installed component's own update task
+# (plain pull + up for stacks without a rune module). Tailscale goes last:
+# recreating it can drop a tailnet SSH session, so run this in tmux.
+[confirm("Pull git changes and update all installed components? Tailscale restarts last and may drop tailnet SSH.")]
 update:
     git pull --ff-only
-    @for d in tailscale dockge stacks/*/; do if [ -f "$d/.env" ]; then (cd "$d" && docker compose pull && docker compose up -d) || exit 1; fi; done
+    @for d in dockge stacks/*/ tailscale; do d="${d%/}"; n="${d##*/}"; if [ ! -f "$d/.env" ]; then continue; fi; if rune --list | grep -q "^ *$n::update "; then rune --yes "$n::update" || exit 1; else (cd "$d" && docker compose pull && docker compose up -d) || exit 1; fi; done

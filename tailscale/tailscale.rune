@@ -11,6 +11,14 @@ up:
 down:
     docker compose down
 
+# Pull the image set in .env and recreate the node.
+[group("tailscale")]
+[working-directory("tailscale")]
+[confirm("Recreate the VM's Tailscale node? Tailnet SSH sessions may drop while it restarts.")]
+update:
+    docker compose pull
+    docker compose up -d --wait
+
 # Follow tailscaled logs.
 [group("tailscale")]
 [working-directory("tailscale")]

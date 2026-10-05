@@ -23,12 +23,14 @@ restart:
 logs:
     docker compose logs -f --tail 100 openclaw-gateway
 
-# Pull the image tags set in .env and recreate the stack.
+# Back up, pull the image tags set in .env, recreate, then check with doctor.
 [group("openclaw")]
 [working-directory("stacks/openclaw")]
 update:
+    docker compose run --rm -T openclaw-cli backup create --output /home/node/backups --verify
     docker compose pull
     docker compose up -d --wait
+    docker compose run --rm -T openclaw-cli doctor --json
 
 # Run interactive onboarding (model provider, channels) again.
 [group("openclaw")]
@@ -61,7 +63,7 @@ tui:
 [group("openclaw")]
 [working-directory("stacks/openclaw")]
 status:
-    docker compose run --rm openclaw-cli status
+    docker compose run --rm -T openclaw-cli status
 
 # Diagnose config and state problems.
 [group("openclaw")]
@@ -103,7 +105,7 @@ audit:
 [group("openclaw")]
 [working-directory("stacks/openclaw")]
 backup:
-    docker compose run --rm openclaw-cli backup create --output /home/node/backups --verify
+    docker compose run --rm -T openclaw-cli backup create --output /home/node/backups --verify
 
 # Print this stack's tailnet URL.
 [group("openclaw")]
