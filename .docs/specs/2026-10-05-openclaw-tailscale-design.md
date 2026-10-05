@@ -171,3 +171,15 @@ Root `README.md`: Tailscale prerequisites (reusable pre-approved auth key, Magic
 - OpenClaw docs at tag v2026.9.8: `docs/help/faq/where-things-live-on-disk.md`, `docs/concepts/memory*.md`, `docs/reference/memory-config.md`, `docs/cli/{plugins,skills,memory,config,tui,backup}.md`, `docs/gateway/{tailscale,configuration,pairing,config-gateway}.md`, `docs/gateway/configuration/hot-reload.md`, `docs/gateway/security/network-exposure.md`, `docs/install/docker/*.md`
 - Tailscale: docs/features/containers/docker (docker-params, how-to), docs/features/tailscale-serve, docs/features/access-control/{auth-keys,key-expiry}, `cmd/containerboot` source, tailscale-dev/ScaleTail, issues #5215, #16987, #20728
 - Docker: moby `daemon/oci_linux.go` (namespace chaining), compose-go `loader/normalize.go` (implicit depends_on)
+
+## Addendum: docs research follow-ups (2026-10-05)
+
+Source: OpenClaw v2026.9.8 docs `install/docker*`, `cli/configure`, `cli/config`, `cli/onboard`, `start/wizard-cli-automation`, `cli/webhooks`, `cli/browser`.
+
+| Topic | Decision |
+|-------|----------|
+| Managed Tailscale | Pin `gateway.tailscale.mode=off` in the config step. The image has no `tailscale` CLI and cannot reach the sidecar's tailscaled, so a wizard-selected Serve/Funnel would stop the gateway from starting. |
+| API key storage | Onboarding (installer step and `rune openclaw::onboard`) uses `--secret-input-mode ref`: auth profiles store `keyRef: {source: "env", id: <VAR>}` and the keys live only in `.env`. |
+| Non-interactive install | `[[setup]]` steps may set `headless = "<run string>"`, allowed only with `interactive = true`. With `--yes` the headless command runs instead of the step being skipped; `once` markers behave the same. OpenClaw's headless step runs `onboard --non-interactive --accept-risk --skip-health --mode local --secret-input-mode ref --gateway-auth token --gateway-token-ref-env OPENCLAW_GATEWAY_TOKEN --skip-channels --no-install-daemon` with `--auth-choice apiKey` when `ANTHROPIC_API_KEY` is set, else `openai-api-key` when `OPENAI_API_KEY` is set, else fails with a message naming `stacks/openclaw/.env`. |
+| Updates | `rune openclaw::update`: `backup create --verify`, `pull`, `up -d --wait`, `doctor --json`; scripted CLI calls use `-T`. Root `rune update` runs `git pull --ff-only`, then each installed component's `<name>::update` task, falling back to `pull` + `up -d` for stacks without a rune module. New `tailscale::update`. |
+| Docs | Sandbox needs a custom image with the Docker CLI; browser control needs the `-browser` image; log size with `logging.file` (100 MB x 6); model and auth changes via `onboard`; do not enable Tailscale in `configure`; Gmail webhooks need Funnel, a custom image with `gog`, and a sandbox; exit-78 recovery; upcoming `pid: "service:openclaw-gateway"` for `openclaw-cli` (on `main`, not in v2026.9.8). |
