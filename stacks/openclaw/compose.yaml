@@ -1,0 +1,84 @@
+# Based on openclaw/openclaw docker-compose.yml (v2026.9.8), adapted for Dockge:
+# prebuilt image, relative bind mounts, loopback-only port, CLI behind a profile.
+services:
+  openclaw-gateway:
+    image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:2026.9.8}
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      HOME: /home/node
+      OPENCLAW_HOME: /home/node
+      TERM: xterm-256color
+      # Pin container-side paths so nothing in .env can point them at host paths.
+      OPENCLAW_STATE_DIR: /home/node/.openclaw
+      OPENCLAW_CONFIG_PATH: /home/node/.openclaw/openclaw.json
+      OPENCLAW_CONFIG_DIR: /home/node/.openclaw
+      OPENCLAW_WORKSPACE_DIR: /home/node/.openclaw/workspace
+      OPENCLAW_GATEWAY_PORT: "18789"
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-}
+      TZ: ${OPENCLAW_TZ:-UTC}
+    volumes:
+      - ./data/config:/home/node/.openclaw
+      - ./data/workspace:/home/node/.openclaw/workspace
+      - ./data/auth:/home/node/.config/openclaw
+      ## Sandbox isolation (agents.defaults.sandbox) needs the host Docker socket,
+      ## which is root-equivalent on the host. Set DOCKER_GID to: stat -c '%g' /var/run/docker.sock
+      # - /var/run/docker.sock:/var/run/docker.sock
+    # group_add:
+    #   - "${DOCKER_GID:-999}"
+    cap_drop:
+      - NET_RAW
+      - NET_ADMIN
+    security_opt:
+      - no-new-privileges:true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${BIND_IP:-127.0.0.1}:18789:18789"
+    init: true
+    restart: unless-stopped
+    command: ["node", "dist/index.js", "gateway", "--bind", "lan", "--port", "18789"]
+    healthcheck:
+      test: ["CMD", "node", "dist/docker-healthcheck.js"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # One-off CLI: docker compose run --rm openclaw-cli <command>
+  # The profile keeps Dockge's "Start" (up -d) from launching it.
+  openclaw-cli:
+    image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:2026.9.8}
+    profiles: ["cli"]
+    network_mode: "service:openclaw-gateway"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      HOME: /home/node
+      OPENCLAW_HOME: /home/node
+      TERM: xterm-256color
+      OPENCLAW_STATE_DIR: /home/node/.openclaw
+      OPENCLAW_CONFIG_PATH: /home/node/.openclaw/openclaw.json
+      OPENCLAW_CONFIG_DIR: /home/node/.openclaw
+      OPENCLAW_WORKSPACE_DIR: /home/node/.openclaw/workspace
+      OPENCLAW_GATEWAY_PORT: "18789"
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-}
+      BROWSER: echo
+      TZ: ${OPENCLAW_TZ:-UTC}
+    volumes:
+      - ./data/config:/home/node/.openclaw
+      - ./data/workspace:/home/node/.openclaw/workspace
+      - ./data/auth:/home/node/.config/openclaw
+    cap_drop:
+      - NET_RAW
+      - NET_ADMIN
+    security_opt:
+      - no-new-privileges:true
+    stdin_open: true
+    tty: true
+    init: true
+    entrypoint: ["node", "dist/index.js"]
+    depends_on:
+      - openclaw-gateway

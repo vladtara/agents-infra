@@ -1,0 +1,25 @@
+# Start Dockge.
+[group("dockge")]
+[working-directory("dockge")]
+up:
+    docker compose up -d
+
+# Stop Dockge. Stacks it manages keep running.
+[group("dockge")]
+[working-directory("dockge")]
+[confirm("Stop Dockge?")]
+down:
+    docker compose down
+
+# Follow Dockge logs.
+[group("dockge")]
+[working-directory("dockge")]
+logs:
+    docker compose logs -f --tail 100
+
+# Pull the Dockge image and recreate the container.
+[group("dockge")]
+[working-directory("dockge")]
+update:
+    docker compose pull
+    docker compose up -d

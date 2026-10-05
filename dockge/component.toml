@@ -1,0 +1,9 @@
+description = "Dockge: web UI for the compose stacks in stacks/"
+order = 10
+
+[env]
+set = { STACKS_DIR = "{stacks_dir}", PUID = "{uid}", PGID = "{gid}" }
+
+[tailscale]
+https_port = 8443
+target = "http://127.0.0.1:5001"

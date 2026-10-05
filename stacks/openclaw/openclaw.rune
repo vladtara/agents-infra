@@ -1,0 +1,64 @@
+# Start the OpenClaw gateway.
+[group("openclaw")]
+[working-directory("stacks/openclaw")]
+up:
+    docker compose up -d
+
+# Stop the OpenClaw gateway.
+[group("openclaw")]
+[working-directory("stacks/openclaw")]
+[confirm("Stop the OpenClaw gateway?")]
+down:
+    docker compose down
+
+# Follow gateway logs.
+[group("openclaw")]
+[working-directory("stacks/openclaw")]
+logs:
+    docker compose logs -f --tail 100 openclaw-gateway
+
+# Pull the image tag set in .env and recreate the gateway.
+[group("openclaw")]
+[working-directory("stacks/openclaw")]
+update:
+    docker compose pull openclaw-gateway
+    docker compose up -d
+
+# Run interactive onboarding (model provider, channels) again.
+[group("openclaw")]
+[working-directory("stacks/openclaw")]
+[confirm("Rerun OpenClaw onboarding? It can change existing settings.")]
+onboard:
+    docker compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js onboard --mode local --no-install-daemon --gateway-auth token --gateway-token-ref-env OPENCLAW_GATEWAY_TOKEN --skip-ui --suppress-gateway-token-output
+    touch data/.onboarded
+    docker compose restart openclaw-gateway
+
+# Run any openclaw CLI command, e.g. `rune openclaw::cli channels list`.
+[group("openclaw")]
+[working-directory("stacks/openclaw")]
+cli +args:
+    docker compose run --rm openclaw-cli {{args}}
+
+# Print the Control UI link with its auth token.
+[group("openclaw")]
+[working-directory("stacks/openclaw")]
+dashboard:
+    docker compose run --rm openclaw-cli dashboard --no-open
+
+# List paired and pending devices.
+[group("openclaw")]
+[working-directory("stacks/openclaw")]
+devices:
+    docker compose run --rm openclaw-cli devices list
+
+# Approve a pending device by id.
+[group("openclaw")]
+[working-directory("stacks/openclaw")]
+approve id:
+    docker compose run --rm openclaw-cli devices approve {{id}}
+
+# Run OpenClaw's security audit.
+[group("openclaw")]
+[working-directory("stacks/openclaw")]
+audit:
+    docker compose run --rm openclaw-cli security audit

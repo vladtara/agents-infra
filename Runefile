@@ -1,0 +1,30 @@
+set minimum_version := "0.6.0"
+
+mod dockge "dockge/dockge.rune"
+mod openclaw "stacks/openclaw/openclaw.rune"
+
+# Install host prerequisites and components (all when none are named).
+install *components:
+    python3 init.py {{components}}
+
+# List components and their state.
+list:
+    @python3 init.py --list
+
+# Show compose projects on this host, including stopped ones.
+ps:
+    docker compose ls --all
+
+# Check that every component's compose file parses.
+validate:
+    @root="$PWD"; for d in dockge stacks/*/; do (cd "$d" && STACKS_DIR="$root/stacks" docker compose config --quiet) && echo "ok  $d" || exit 1; done
+
+# Run the installer unit tests.
+test:
+    python3 -m unittest discover -s tests
+
+# Pull git changes, then pull images and recreate every installed component.
+[confirm("Pull git changes and recreate all installed components?")]
+update:
+    git pull --ff-only
+    @for d in dockge stacks/*/; do if [ -f "$d/.env" ]; then (cd "$d" && docker compose pull && docker compose up -d) || exit 1; fi; done

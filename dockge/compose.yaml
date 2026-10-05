@@ -1,0 +1,16 @@
+services:
+  dockge:
+    image: ${DOCKGE_IMAGE:-louislam/dockge:1}
+    restart: unless-stopped
+    ports:
+      - "${BIND_IP:-127.0.0.1}:5001:5001"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data:/app/data
+      # Dockge requires the stacks path to be identical inside and outside the container.
+      - "${STACKS_DIR:?run init.py first}:${STACKS_DIR:?run init.py first}"
+    environment:
+      DOCKGE_STACKS_DIR: "${STACKS_DIR:?run init.py first}"
+      PUID: "${PUID:-1000}"
+      PGID: "${PGID:-1000}"
+      TZ: "${TZ:-UTC}"
