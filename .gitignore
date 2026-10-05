@@ -220,6 +220,7 @@ __marimo__/
 .streamlit/secrets.toml
 
 # agents-infra runtime state (secrets live in .env, ignored above)
+tailscale/data/
 dockge/data/
 stacks/*/data/
 .rune/

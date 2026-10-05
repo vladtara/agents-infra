@@ -1,0 +1,24 @@
+# Start the VM's tailnet node.
+[group("tailscale")]
+[working-directory("tailscale")]
+up:
+    docker compose up -d --wait
+
+# Stop the VM's tailnet node.
+[group("tailscale")]
+[working-directory("tailscale")]
+[confirm("Stop Tailscale on this VM? Tailnet SSH and the Dockge URL stop working.")]
+down:
+    docker compose down
+
+# Follow tailscaled logs.
+[group("tailscale")]
+[working-directory("tailscale")]
+logs:
+    docker compose logs -f --tail 100
+
+# Show this node and its tailnet peers.
+[group("tailscale")]
+[working-directory("tailscale")]
+status:
+    docker compose exec tailscale tailscale status

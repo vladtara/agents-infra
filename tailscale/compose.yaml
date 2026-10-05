@@ -1,0 +1,33 @@
+# The VM's own tailnet node. Host networking puts tailscale0 on the VM, so its
+# sshd is reachable over the tailnet, and Serve publishes Dockge over HTTPS.
+# Kernel mode on purpose: userspace mode would forward tailnet connections to
+# every service bound to the VM's loopback.
+services:
+  tailscale:
+    image: ${TS_IMAGE:-tailscale/tailscale:v1.102.5}
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+      TS_HOSTNAME: ${TS_HOSTNAME:-agents-vm}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "false"
+      TS_AUTH_ONCE: "true"
+      TS_SERVE_CONFIG: /config/serve.json
+      TS_ENABLE_HEALTH_CHECK: "true"
+      TS_LOCAL_ADDR_PORT: 127.0.0.1:9002
+    volumes:
+      - ./data:/var/lib/tailscale
+      # Mounted as a directory so edits to serve.json are picked up live.
+      - ./serve:/config:ro
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:9002/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

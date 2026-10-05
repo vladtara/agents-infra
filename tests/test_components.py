@@ -156,9 +156,11 @@ REPO = Path(__file__).resolve().parent.parent
 
 class RepoManifestTest(unittest.TestCase):
     def test_shipped_components_load_in_install_order(self):
-        names = [c.name for c in components.discover(REPO)]
-        self.assertEqual(names, ["dockge", "openclaw"])
-
+        found = {c.name: c for c in components.discover(REPO)}
+        self.assertEqual(list(found), ["tailscale", "dockge", "openclaw"])
+        self.assertEqual(found["tailscale"].tailscale_service, "tailscale")
+        self.assertEqual(found["tailscale"].env_ask, ("TS_AUTHKEY",))
+        self.assertIsNone(found["dockge"].tailscale_service)
 
 if __name__ == "__main__":
     unittest.main()

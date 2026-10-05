@@ -1,5 +1,6 @@
 set minimum_version := "0.6.0"
 
+mod tailscale "tailscale/tailscale.rune"
 mod dockge "dockge/dockge.rune"
 mod openclaw "stacks/openclaw/openclaw.rune"
 
@@ -17,7 +18,7 @@ ps:
 
 # Check that every component's compose file parses.
 validate:
-    @root="$PWD"; for d in dockge stacks/*/; do (cd "$d" && STACKS_DIR="$root/stacks" docker compose config --quiet) && echo "ok  $d" || exit 1; done
+    @root="$PWD"; for d in tailscale dockge stacks/*/; do (cd "$d" && STACKS_DIR="$root/stacks" docker compose config --quiet) && echo "ok  $d" || exit 1; done
 
 # Run the installer unit tests.
 test:
@@ -27,4 +28,4 @@ test:
 [confirm("Pull git changes and recreate all installed components?")]
 update:
     git pull --ff-only
-    @for d in dockge stacks/*/; do if [ -f "$d/.env" ]; then (cd "$d" && docker compose pull && docker compose up -d) || exit 1; fi; done
+    @for d in tailscale dockge stacks/*/; do if [ -f "$d/.env" ]; then (cd "$d" && docker compose pull && docker compose up -d) || exit 1; fi; done

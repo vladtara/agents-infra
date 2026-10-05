@@ -1,0 +1,9 @@
+description = "Tailscale: puts the VM on your tailnet (SSH) and serves Dockge over HTTPS"
+order = 5
+dirs = ["data"]
+
+[env]
+ask = ["TS_AUTHKEY"]
+
+[tailscale]
+service = "tailscale"
