@@ -111,4 +111,4 @@ backup:
 [group("openclaw")]
 [working-directory("stacks/openclaw")]
 url:
-    @docker compose exec -T tailscale tailscale status --json | python3 -c 'import json, sys; d = json.load(sys.stdin).get("CertDomains") or []; print("https://" + d[0] + "/" if d else "no HTTPS name yet: log the node in and enable MagicDNS + HTTPS certificates")'
+    @docker compose exec -T tailscale tailscale status --json 2>/dev/null | python3 -c 'import json, sys; s = json.loads(sys.stdin.read() or "{}"); d = s.get("CertDomains") or []; print("https://" + d[0] + "/" if d else "HTTPS certificates are off: enable them at https://login.tailscale.com/admin/dns" if s.get("BackendState") == "Running" else "node not running or not logged in: rune openclaw::up, then check TS_AUTHKEY in stacks/openclaw/.env")'

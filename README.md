@@ -10,9 +10,14 @@ Run and manage AI tools in Docker on a single Linux VM. The repo is cloned on th
 
 ## Before you start
 
+> [!IMPORTANT]
+> **Turn on HTTPS certificates in your tailnet.** Every URL here (Dockge, OpenClaw) is published by Tailscale Serve over HTTPS. With HTTPS certificates off, both nodes still join the tailnet and show up in the admin console, but Serve is never applied and the URLs do not load (`tailscale serve status` says "No serve config").
+>
+> [Admin console > DNS](https://login.tailscale.com/admin/dns): enable **MagicDNS**, then **HTTPS Certificates > Enable HTTPS**. If you turn it on after installing, nothing needs to be reinstalled or restarted: the nodes pick it up within a minute.
+
 In the [Tailscale admin console](https://login.tailscale.com/admin):
 
-1. **DNS:** enable MagicDNS and HTTPS certificates. Without them the HTTPS URLs do not work.
+1. **DNS:** MagicDNS and HTTPS certificates on (see the box above).
 2. **Settings > Keys:** generate an auth key that is **reusable** and **pre-approved**. `init.py` asks for it once and uses it for both nodes (`agents-vm`, `openclaw`). It is only needed for the first login.
 3. After the first install, open **Machines** and choose **Disable key expiry** for both nodes, or use a tagged auth key (expiry is off for tagged nodes).
 
@@ -34,7 +39,7 @@ python3 init.py
 1. installs Docker Engine + compose plugin (Docker's apt repo) and [rune](https://github.com/rune-task-runner/rune) if missing
 2. writes each component's `.env` from `.env.example`, generating secrets and asking for the Tailscale auth key and API keys (each asked once per run)
 3. pulls images, runs first-time setup (OpenClaw onboarding), starts the stacks and waits for their health checks
-4. prints each tailnet URL
+4. prints each tailnet URL. If something blocks access, the run ends with an **Action needed** list, for example "HTTPS certificates are off in your tailnet" or "node is not logged in".
 
 It is safe to rerun: existing `.env` values and secrets are kept, one-time steps are skipped.
 
@@ -58,6 +63,15 @@ Every UI listens on loopback only and is published on the tailnet with Tailscale
 - **OpenClaw:** `https://openclaw.<tailnet>.ts.net`. Without Tailscale there is no network path by design; use `rune openclaw::tui` on the VM. First login and operations: [stacks/openclaw/README.md](stacks/openclaw/README.md).
 
 `rune tailscale::status` shows the VM node; `rune openclaw::url` prints OpenClaw's address.
+
+### If a URL does not load
+
+| Symptom | Fix |
+|---------|-----|
+| `init.py` says "HTTPS certificates are off in your tailnet", or `docker compose exec tailscale tailscale serve status` (in `tailscale/` or `stacks/openclaw/`) says "No serve config" | Enable HTTPS certificates at [admin console > DNS](https://login.tailscale.com/admin/dns). No restart needed; give it a minute. |
+| `init.py` says "node is not logged in", or a `tailscale` container is unhealthy | Set `TS_AUTHKEY` in that component's `.env` and rerun `python3 init.py`. |
+| The name does not resolve on your laptop | The laptop must be on the same tailnet with Tailscale DNS on: `tailscale status` there lists `agents-vm` and `openclaw`. |
+| The first load hangs for a while | The certificate is issued on the first HTTPS request; allow up to a minute. |
 
 ## Daily tasks
 

@@ -18,6 +18,10 @@ Requests from Serve arrive over loopback with forwarded headers. `init.py` sets 
 2. Open `https://openclaw.<tailnet>.ts.net` on a device in your tailnet and paste the gateway token (`OPENCLAW_GATEWAY_TOKEN` in `stacks/openclaw/.env`).
 3. The browser shows up as a pending device: `rune openclaw::devices`, then `rune openclaw::approve <requestId>`.
 
+The URL needs HTTPS certificates enabled in your tailnet ([admin console > DNS](https://login.tailscale.com/admin/dns)); see the root README.
+
+The interactive onboarding wizard ends with "Gateway not detected yet. Start now: openclaw gateway run". That is expected: the wizard runs in a one-off container before the gateway starts, and `init.py` starts the gateway right after it. Do not run `openclaw gateway run` yourself.
+
 With `init.py --yes`, onboarding runs non-interactively from the model key in `.env` (`ANTHROPIC_API_KEY` first, then `OPENAI_API_KEY`), so fill one in before an unattended install. Run `rune openclaw::onboard` later for the interactive wizard (models, auth, channels).
 
 ## Where the data lives
@@ -112,7 +116,7 @@ A later OpenClaw release (already on upstream `main`) needs `pid: "service:openc
 ## Troubleshooting
 
 - **`init.py` fails after `up --wait`, `tailscale` unhealthy:** the node is not logged in. Set `TS_AUTHKEY` in `stacks/openclaw/.env` (or open the login URL from `docker compose logs tailscale`), then rerun `python3 init.py openclaw`.
-- **URL does not load:** `rune openclaw::url`. "no HTTPS name" means the node is not logged in (`docker compose logs tailscale`) or MagicDNS and HTTPS certificates are off in the admin console.
+- **URL does not load:** `rune openclaw::url`. "HTTPS certificates are off" means enable them at [admin console > DNS](https://login.tailscale.com/admin/dns) (no restart needed); "not logged in" means fix `TS_AUTHKEY` in `stacks/openclaw/.env` and rerun `python3 init.py openclaw`.
 - **Gateway lost its network after the sidecar restarted on its own:** `rune openclaw::restart` recreates the gateway in the sidecar's current namespace.
 - **`proxy_attribution_required`:** `gateway.trustedProxies` is missing; rerun `python3 init.py openclaw`.
 - **`blocked plugin candidate: suspicious ownership`:** files not owned by uid 1000; rerun `python3 init.py openclaw`, which fixes ownership.
