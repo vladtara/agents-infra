@@ -1,15 +1,26 @@
 # agents-infra
 
-Run and manage AI tools in Docker on a single Linux VM. The repo is cloned on the VM, every tool is a Docker Compose stack, and [Dockge](https://github.com/louislam/dockge) gives a web UI over all of them. Git stays the source of truth: edits made in Dockge show up in `git diff`.
+Run and manage AI tools in Docker on a single Linux VM. The repo is cloned on the VM, every tool is a Docker Compose stack, and [Dockge](https://github.com/louislam/dockge) gives a web UI over them. Git stays the source of truth: edits made in Dockge show up in `git diff`. Access goes through [Tailscale](https://tailscale.com) running in containers; nothing listens on public interfaces.
 
-| Component | What it is | Local URL | Tailnet URL |
-|-----------|------------|-----------|-------------|
-| `dockge` | Web UI for the stacks in `stacks/` | http://127.0.0.1:5001 | `https://<vm>.<tailnet>.ts.net:8443` |
-| `openclaw` | [OpenClaw](https://github.com/openclaw/openclaw) personal AI assistant gateway | http://127.0.0.1:18789 | `https://<vm>.<tailnet>.ts.net` |
+| Component | What it is | Tailnet address |
+|-----------|------------|-----------------|
+| `tailscale` | The VM's own tailnet node: SSH to the VM, serves Dockge | `ssh <user>@agents-vm` |
+| `dockge` | Web UI for the stacks in `stacks/` | `https://agents-vm.<tailnet>.ts.net` |
+| `openclaw` | [OpenClaw](https://github.com/openclaw/openclaw) AI assistant gateway on its own tailnet node ([guide](stacks/openclaw/README.md)) | `https://openclaw.<tailnet>.ts.net` |
+
+## Before you start
+
+In the [Tailscale admin console](https://login.tailscale.com/admin):
+
+1. **DNS:** enable MagicDNS and HTTPS certificates. Without them the HTTPS URLs do not work.
+2. **Settings > Keys:** generate an auth key that is **reusable** and **pre-approved**. `init.py` asks for it once and uses it for both nodes (`agents-vm`, `openclaw`). It is only needed for the first login.
+3. After the first install, open **Machines** and choose **Disable key expiry** for both nodes, or use a tagged auth key (expiry is off for tagged nodes).
+
+If the VM already runs Tailscale from a package, disable it first (`sudo systemctl disable --now tailscaled`): the containerized node uses the same `tailscale0` interface, and `init.py` refuses to continue while it runs.
 
 ## Quick start
 
-On a fresh Ubuntu 24.04+ or Debian 12+ VM (needs Python 3.11+ and sudo):
+On a fresh Ubuntu 24.04+ or Debian 12+ VM (Python 3.11+ and sudo):
 
 ```sh
 sudo git clone https://github.com/vladtara/agents-infra.git /opt/agents-infra
@@ -20,10 +31,10 @@ python3 init.py
 
 `init.py` asks before installing anything on the host, then:
 
-1. installs Docker Engine + compose plugin (Docker's apt repo), Tailscale and [rune](https://github.com/rune-task-runner/rune) if missing
-2. writes each component's `.env` from `.env.example`, generating secrets and asking for API keys
-3. pulls images, runs first-time setup (OpenClaw onboarding), starts the stacks
-4. publishes the UIs on your tailnet with `tailscale serve`
+1. installs Docker Engine + compose plugin (Docker's apt repo) and [rune](https://github.com/rune-task-runner/rune) if missing
+2. writes each component's `.env` from `.env.example`, generating secrets and asking for the Tailscale auth key and API keys (each asked once per run)
+3. pulls images, runs first-time setup (OpenClaw onboarding), starts the stacks and waits for their health checks
+4. prints each tailnet URL
 
 It is safe to rerun: existing `.env` values and secrets are kept, one-time steps are skipped.
 
@@ -38,15 +49,13 @@ If Docker was just installed, log out and back in (or run `newgrp docker`) and r
 
 ## Access
 
-Every port is published on `127.0.0.1` only. Docker-published ports bypass UFW, so nothing is exposed even with the firewall off.
+Every UI listens on loopback only and is published on the tailnet with Tailscale Serve (HTTPS). Tailscale runs in kernel mode, so tailnet peers reach only what Serve publishes plus the VM's SSH server.
 
-- **Tailscale:** `init.py` runs `tailscale serve`, which gives HTTPS on your tailnet. Serve needs MagicDNS and HTTPS certificates enabled in the Tailscale admin console; if they are off, `tailscale serve` prints a link to enable them. Rerun `python3 init.py` after the first `tailscale up` so OpenClaw learns its tailnet origin.
-- **SSH tunnel** (always works): `ssh -N -L 5001:127.0.0.1:5001 -L 18789:127.0.0.1:18789 user@vm`, then open the local URLs.
+- **SSH:** `ssh <user>@agents-vm`, the VM's own sshd over the tailnet. Closing public SSH in your cloud firewall is optional and up to you.
+- **Dockge:** `https://agents-vm.<tailnet>.ts.net`. It asks you to create an admin account on first visit. Without Tailscale: `ssh -L 5001:127.0.0.1:5001 <user>@<public-ip>`, then http://127.0.0.1:5001.
+- **OpenClaw:** `https://openclaw.<tailnet>.ts.net`. Without Tailscale there is no network path by design; use `rune openclaw::tui` on the VM. First login and operations: [stacks/openclaw/README.md](stacks/openclaw/README.md).
 
-First visits:
-
-- Dockge asks you to create an admin account.
-- OpenClaw: `rune openclaw::dashboard` prints the Control UI link with its token. A new browser shows up as a pending device: `rune openclaw::devices`, then `rune openclaw::approve <id>`.
+`rune tailscale::status` shows the VM node; `rune openclaw::url` prints OpenClaw's address.
 
 ## Daily tasks
 
@@ -60,11 +69,11 @@ rune validate                  # docker compose config for every component
 rune update                    # git pull, then pull images and recreate installed components
 rune test                      # installer unit tests
 
+rune tailscale::up | down | logs | status
 rune dockge::up | down | logs | update
-rune openclaw::up | down | logs | update
-rune openclaw::onboard         # rerun onboarding (model provider, channels)
+rune openclaw::up | down | restart | logs | update
+rune openclaw::shell | tui | status | doctor | configure | backup | url
 rune openclaw::cli channels list
-rune openclaw::audit           # openclaw security audit
 ```
 
 Without rune, use `docker compose` inside a component folder; the project name is the folder name, the same one Dockge uses.
@@ -75,10 +84,12 @@ Without rune, use `docker compose` inside a component folder; the project name i
 init.py            entry point (Python stdlib only)
 installer/         install logic: host prerequisites, manifests, .env rendering
 Runefile           root rune tasks; each component adds a module
+tailscale/         the VM's tailnet node, outside stacks/ so Dockge cannot stop it
 dockge/            Dockge itself, outside stacks/ so it never manages itself
 stacks/            DOCKGE_STACKS_DIR: one folder per tool
   openclaw/
 tests/             python3 -m unittest discover -s tests
+.docs/             design specs and implementation plans
 ```
 
 Each component folder holds:
@@ -94,39 +105,39 @@ Each component folder holds:
 
 ## Adding a tool
 
-1. Create `stacks/<name>/` (lowercase, digits, `-`, `_`) with `compose.yaml` and `.env.example`. Bind ports to `${BIND_IP:-127.0.0.1}` and keep state in relative `./data/...` mounts.
+1. Create `stacks/<name>/` (lowercase, digits, `-`, `_`) with `compose.yaml` and `.env.example`. Keep state in relative `./data/...` mounts and do not publish ports on public interfaces.
 2. Add `component.toml`:
 
    ```toml
    description = "What it is"
-   order = 30                      # install order; dockge = 10, openclaw = 20
+   order = 30                      # install order; tailscale = 5, dockge = 10, openclaw = 20
    dirs = ["data"]                 # created before the stack starts
 
    [env]
    generate = ["APP_SECRET"]       # random 64-hex value when empty
-   ask = ["SOME_API_KEY"]          # asked once; blank keeps the default
-   set = { APP_URL = "https://{ts_hostname}" }  # rewritten on every run
+   ask = ["SOME_API_KEY"]          # asked once per run; blank keeps the default
+   set = { DATA_ROOT = "{stacks_dir}/<name>/data" }  # rewritten on every run
 
-   [[setup]]                       # `docker compose <run>`, in order, before `up -d`
+   [[setup]]                       # `docker compose <run>`, in order, before `up -d --wait`
    run = "run --rm app migrate"
    once = "data/.migrated"         # skip while this marker exists; created on success
    interactive = false             # true: skipped with --yes
 
-   [tailscale]
-   https_port = 8444
-   target = "http://127.0.0.1:8080"
+   [tailscale]                     # optional: print the URL of this stack's Tailscale sidecar
+   service = "tailscale"
    ```
 
-   Placeholders in `set` and `run`: `{repo_dir}`, `{stacks_dir}`, `{uid}`, `{gid}`, `{ts_hostname}` (`localhost` until Tailscale is up). Every key named in `[env]` must exist in `.env.example`. If a setup step ran while the stack was already running, `init.py` restarts it.
-3. Optionally add `stacks/<name>/<name>.rune` (use `[working-directory("stacks/<name>")]` on each task) and a `mod <name> "stacks/<name>/<name>.rune"` line in `Runefile`.
-4. `rune validate && python3 init.py <name>`
+   Placeholders in `set` and `run`: `{repo_dir}`, `{stacks_dir}`, `{uid}`, `{gid}`. Every key named in `[env]` must exist in `.env.example`. If a setup step ran while the stack was already running, `init.py` restarts it (except the sidecar).
+3. To give the tool its own tailnet name, copy the `tailscale` service and the `tailscale/serve.json` folder from `stacks/openclaw/`, point `Proxy` at the app's port, set `network_mode: service:tailscale` on the app, add `TS_IMAGE`, `TS_AUTHKEY`, `TS_HOSTNAME` to `.env.example` and `TS_AUTHKEY` to `[env] ask`. If the app loads `.env` with `env_file`, set `TS_AUTHKEY: ""` in its `environment:`.
+4. Optionally add `stacks/<name>/<name>.rune` (use `[working-directory("stacks/<name>")]` on each task) and a `mod <name> "stacks/<name>/<name>.rune"` line in `Runefile`.
+5. `rune validate && python3 init.py <name>`
 
-Stacks created from the Dockge UI work too. They just have no `component.toml`, so `init.py` ignores them.
+Stacks created from the Dockge UI work too. They have no `component.toml`, so `init.py` ignores them.
 
 ## Security notes
 
-- Dockge mounts the Docker socket, which is root-equivalent on the host. Keep it on loopback or the tailnet, and leave its console disabled (the default).
-- OpenClaw's sandbox (agents in sibling containers) is off. Enabling it also needs the Docker socket; see the comments in `stacks/openclaw/compose.yaml`.
-- OpenClaw keeps OAuth tokens in plain SQLite under `stacks/openclaw/data/`. Treat that folder and its backups as credentials.
-- `init.py` pins OpenClaw's `gateway.mode`, `gateway.bind`, `gateway.controlUi.allowedOrigins` and `gateway.auth.rateLimit` on every run; change them in `stacks/openclaw/component.toml`, not by hand.
+- Dockge mounts the Docker socket, which is root-equivalent on the host. It listens on loopback only; leave its console disabled (the default).
+- The Tailscale containers have `NET_ADMIN` and `/dev/net/tun`; the VM node shares the host network. Treat `tailscale/data/` and `stacks/*/data/tailscale/` as credentials (node keys).
+- OpenClaw's sandbox (agents in sibling containers) is off. Enabling it needs the Docker socket; see the comments in `stacks/openclaw/compose.yaml`.
+- OpenClaw keeps OAuth tokens in plain SQLite under `stacks/openclaw/data/`. Treat that folder and `stacks/openclaw/backups/` as credentials.
 - Dockge 1.5.0 (`louislam/dockge:1`) ignores `PUID`/`PGID`, so stacks *created* in the UI are owned by root until a release ships that support. Editing existing files keeps their owner. `DOCKGE_IMAGE=louislam/dockge:nightly` in `dockge/.env` has it today.

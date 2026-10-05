@@ -87,7 +87,7 @@ Dockge keeps `127.0.0.1:5001` and loses its `[tailscale]` section.
 - config-set step pins: `gateway.mode=local`, `gateway.bind=loopback`, `gateway.trustedProxies=["127.0.0.1"]`, `gateway.auth.rateLimit={maxAttempts:10, windowMs:60000, lockoutMs:300000}`, `logging.file` under `/home/node/.openclaw/logs/`. The localhost `allowedOrigins` list is dropped: `.ts.net` same-origin UI loads are accepted by default.
 - onboarding step unchanged; the ownership step also covers `/home/node/backups`.
 
-`openclaw.rune` adds: `shell` (`exec openclaw-gateway bash`), `tui`, `status`, `doctor`, `configure`, `backup` (`backup create --output /home/node/backups --verify`), `url` (prints tailnet URL). Existing tasks stay.
+`openclaw.rune` adds: `restart` (force-recreate the gateway), `shell` (`exec openclaw-gateway bash`), `tui`, `status`, `doctor`, `configure`, `backup` (`backup create --output /home/node/backups --verify`), `url` (prints tailnet URL). Existing tasks stay. Setup steps and `onboard` drop `--no-deps`: one-off containers join the sidecar's namespace, so the sidecar must be running.
 
 ## OpenClaw operating model (content for `stacks/openclaw/README.md`)
 
@@ -139,7 +139,7 @@ Root `README.md`: Tailscale prerequisites (reusable pre-approved auth key, Magic
 
 ## Caveats
 
-- If the sidecar restarts outside Compose (crash), the gateway and cli lose networking. Fix: `rune openclaw::up` (recreates dependents). Documented.
+- If the sidecar restarts outside Compose (crash), the gateway loses networking. Fix: `rune openclaw::restart` (recreates the gateway in the sidecar's current namespace). Documented.
 - `TS_AUTH_ONCE=true` means `TS_EXTRA_ARGS` only apply on first login. None are used.
 - Two VMs on one tailnet with default hostnames collide; Tailscale appends a suffix. `TS_HOSTNAME` is configurable in `.env`.
 - Trusting `127.0.0.1` as a proxy lets any process in the OpenClaw namespace supply forwarded client IPs; token auth stays on.
