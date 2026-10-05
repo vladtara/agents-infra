@@ -162,5 +162,17 @@ class RepoManifestTest(unittest.TestCase):
         self.assertEqual(found["tailscale"].env_ask, ("TS_AUTHKEY",))
         self.assertIsNone(found["dockge"].tailscale_service)
 
+    def test_openclaw_manifest_uses_its_sidecar(self):
+        openclaw = {c.name: c for c in components.discover(REPO)}["openclaw"]
+        self.assertEqual(openclaw.tailscale_service, "tailscale")
+        self.assertEqual(openclaw.env_ask, ("TS_AUTHKEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"))
+        self.assertIn("backups", openclaw.dirs)
+        self.assertIn("data/config/logs", openclaw.dirs)
+        config_step = openclaw.setup[-1].run
+        for pinned in ('"gateway.bind","value":"loopback"', '"gateway.trustedProxies","value":["127.0.0.1"]',
+                       '"logging.file","value":"/home/node/.openclaw/logs/openclaw.log"'):
+            self.assertIn(pinned, config_step)
+        self.assertNotIn("--no-deps", " ".join(step.run for step in openclaw.setup))
+
 if __name__ == "__main__":
     unittest.main()

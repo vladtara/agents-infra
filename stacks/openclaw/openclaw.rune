@@ -1,15 +1,21 @@
-# Start the OpenClaw gateway.
+# Start the stack (tailscale sidecar + gateway).
 [group("openclaw")]
 [working-directory("stacks/openclaw")]
 up:
-    docker compose up -d
+    docker compose up -d --wait
 
-# Stop the OpenClaw gateway.
+# Stop the stack.
 [group("openclaw")]
 [working-directory("stacks/openclaw")]
-[confirm("Stop the OpenClaw gateway?")]
+[confirm("Stop OpenClaw and its tailnet node?")]
 down:
     docker compose down
+
+# Recreate the gateway, e.g. after the sidecar restarted on its own.
+[group("openclaw")]
+[working-directory("stacks/openclaw")]
+restart:
+    docker compose up -d --force-recreate --wait openclaw-gateway
 
 # Follow gateway logs.
 [group("openclaw")]
@@ -17,19 +23,19 @@ down:
 logs:
     docker compose logs -f --tail 100 openclaw-gateway
 
-# Pull the image tag set in .env and recreate the gateway.
+# Pull the image tags set in .env and recreate the stack.
 [group("openclaw")]
 [working-directory("stacks/openclaw")]
 update:
-    docker compose pull openclaw-gateway
-    docker compose up -d
+    docker compose pull
+    docker compose up -d --wait
 
 # Run interactive onboarding (model provider, channels) again.
 [group("openclaw")]
 [working-directory("stacks/openclaw")]
 [confirm("Rerun OpenClaw onboarding? It can change existing settings.")]
 onboard:
-    docker compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js onboard --mode local --no-install-daemon --gateway-auth token --gateway-token-ref-env OPENCLAW_GATEWAY_TOKEN --skip-ui --suppress-gateway-token-output
+    docker compose run --rm --entrypoint node openclaw-gateway dist/index.js onboard --mode local --no-install-daemon --gateway-auth token --gateway-token-ref-env OPENCLAW_GATEWAY_TOKEN --skip-ui --suppress-gateway-token-output
     touch data/.onboarded
     docker compose restart openclaw-gateway
 
@@ -38,6 +44,36 @@ onboard:
 [working-directory("stacks/openclaw")]
 cli +args:
     docker compose run --rm openclaw-cli {{args}}
+
+# Open a bash shell in the gateway container (openclaw is on PATH).
+[group("openclaw")]
+[working-directory("stacks/openclaw")]
+shell:
+    docker compose exec openclaw-gateway bash
+
+# Chat in the terminal. Works when Tailscale is down.
+[group("openclaw")]
+[working-directory("stacks/openclaw")]
+tui:
+    docker compose run --rm openclaw-cli tui
+
+# Show gateway, channel and session status.
+[group("openclaw")]
+[working-directory("stacks/openclaw")]
+status:
+    docker compose run --rm openclaw-cli status
+
+# Diagnose config and state problems.
+[group("openclaw")]
+[working-directory("stacks/openclaw")]
+doctor:
+    docker compose run --rm openclaw-cli doctor
+
+# Interactive configuration wizard: models, channels, gateway.
+[group("openclaw")]
+[working-directory("stacks/openclaw")]
+configure:
+    docker compose run --rm openclaw-cli configure
 
 # Print the Control UI link with its auth token.
 [group("openclaw")]
@@ -51,7 +87,7 @@ dashboard:
 devices:
     docker compose run --rm openclaw-cli devices list
 
-# Approve a pending device by id.
+# Approve a pending device by request id.
 [group("openclaw")]
 [working-directory("stacks/openclaw")]
 approve id:
@@ -62,3 +98,15 @@ approve id:
 [working-directory("stacks/openclaw")]
 audit:
     docker compose run --rm openclaw-cli security audit
+
+# Write a verified backup archive to stacks/openclaw/backups/.
+[group("openclaw")]
+[working-directory("stacks/openclaw")]
+backup:
+    docker compose run --rm openclaw-cli backup create --output /home/node/backups --verify
+
+# Print this stack's tailnet URL.
+[group("openclaw")]
+[working-directory("stacks/openclaw")]
+url:
+    @docker compose exec -T tailscale tailscale status --json | python3 -c 'import json, sys; d = json.load(sys.stdin).get("CertDomains") or []; print("https://" + d[0] + "/" if d else "no HTTPS name yet: log the node in and enable MagicDNS + HTTPS certificates")'

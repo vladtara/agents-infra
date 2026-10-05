@@ -223,4 +223,5 @@ __marimo__/
 tailscale/data/
 dockge/data/
 stacks/*/data/
+stacks/*/backups/
 .rune/

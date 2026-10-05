@@ -1,8 +1,43 @@
 # Based on openclaw/openclaw docker-compose.yml (v2026.9.8), adapted for Dockge:
-# prebuilt image, relative bind mounts, loopback-only port, CLI behind a profile.
+# prebuilt image, relative bind mounts, CLI behind a profile, and a Tailscale
+# sidecar that owns the network namespace. The gateway binds loopback and is
+# reachable only through the sidecar's Tailscale Serve (HTTPS).
 services:
+  # Tailnet node "openclaw". Kernel mode on purpose: in userspace mode a direct
+  # tailnet connection to port 18789 would reach the gateway as a local client.
+  tailscale:
+    image: ${TS_IMAGE:-tailscale/tailscale:v1.102.5}
+    restart: unless-stopped
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+      TS_HOSTNAME: ${TS_HOSTNAME:-openclaw}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "false"
+      TS_AUTH_ONCE: "true"
+      TS_SERVE_CONFIG: /config/serve.json
+      TS_ENABLE_HEALTH_CHECK: "true"
+      TS_LOCAL_ADDR_PORT: 127.0.0.1:9002
+    volumes:
+      - ./data/tailscale:/var/lib/tailscale
+      # Mounted as a directory so edits to serve.json are picked up live.
+      - ./tailscale:/config:ro
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+    # Services sharing this namespace cannot set extra_hosts themselves.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:9002/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
   openclaw-gateway:
     image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:2026.9.8}
+    network_mode: service:tailscale
     env_file:
       - path: .env
         required: false
@@ -17,11 +52,14 @@ services:
       OPENCLAW_WORKSPACE_DIR: /home/node/.openclaw/workspace
       OPENCLAW_GATEWAY_PORT: "18789"
       OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-}
+      # env_file passes the whole .env; keep the Tailscale auth key away from the agent.
+      TS_AUTHKEY: ""
       TZ: ${OPENCLAW_TZ:-UTC}
     volumes:
       - ./data/config:/home/node/.openclaw
       - ./data/workspace:/home/node/.openclaw/workspace
       - ./data/auth:/home/node/.config/openclaw
+      - ./backups:/home/node/backups
       ## Sandbox isolation (agents.defaults.sandbox) needs the host Docker socket,
       ## which is root-equivalent on the host. Set DOCKER_GID to: stat -c '%g' /var/run/docker.sock
       # - /var/run/docker.sock:/var/run/docker.sock
@@ -32,13 +70,9 @@ services:
       - NET_ADMIN
     security_opt:
       - no-new-privileges:true
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    ports:
-      - "${BIND_IP:-127.0.0.1}:18789:18789"
     init: true
     restart: unless-stopped
-    command: ["node", "dist/index.js", "gateway", "--bind", "lan", "--port", "18789"]
+    command: ["node", "dist/index.js", "gateway", "--bind", "loopback", "--port", "18789"]
     healthcheck:
       test: ["CMD", "node", "dist/docker-healthcheck.js"]
       interval: 30s
@@ -51,7 +85,7 @@ services:
   openclaw-cli:
     image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:2026.9.8}
     profiles: ["cli"]
-    network_mode: "service:openclaw-gateway"
+    network_mode: service:tailscale
     env_file:
       - path: .env
         required: false
@@ -65,12 +99,14 @@ services:
       OPENCLAW_WORKSPACE_DIR: /home/node/.openclaw/workspace
       OPENCLAW_GATEWAY_PORT: "18789"
       OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:-}
+      TS_AUTHKEY: ""
       BROWSER: echo
       TZ: ${OPENCLAW_TZ:-UTC}
     volumes:
       - ./data/config:/home/node/.openclaw
       - ./data/workspace:/home/node/.openclaw/workspace
       - ./data/auth:/home/node/.config/openclaw
+      - ./backups:/home/node/backups
     cap_drop:
       - NET_RAW
       - NET_ADMIN

@@ -1,24 +1,29 @@
-description = "OpenClaw: personal AI assistant gateway"
+description = "OpenClaw: personal AI assistant gateway on its own tailnet node"
 order = 20
-dirs = ["data/config", "data/workspace", "data/auth"]
+dirs = ["data/config", "data/config/logs", "data/workspace", "data/auth", "data/tailscale", "backups"]
 
 [env]
 generate = ["OPENCLAW_GATEWAY_TOKEN"]
-ask = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"]
+ask = ["TS_AUTHKEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"]
 
-# Setup steps mirror upstream scripts/docker/setup.sh (v2026.9.8).
+# Setup steps mirror upstream scripts/docker/setup.sh (v2026.9.8). No --no-deps:
+# one-off containers join the tailscale sidecar's namespace, so it must be running.
 
 # The image runs as uid 1000 ("node"). Fix ownership from a short-lived root
 # container, leaving user files inside the workspace untouched.
 [[setup]]
-run = '''run --rm --no-deps --user root --entrypoint sh openclaw-gateway -c 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; export PATH; /usr/bin/find -P /home/node/.openclaw -xdev \( ! -path /home/node/.openclaw/workspace -o -prune \) -execdir /usr/bin/chown -h node:node {} +; /usr/bin/chown -h node:node /home/node/.config; /usr/bin/find -P /home/node/.config/openclaw -xdev -execdir /usr/bin/chown -h node:node {} +; if [ -d /home/node/.openclaw/workspace/.openclaw ] && [ ! -L /home/node/.openclaw/workspace/.openclaw ]; then /usr/bin/find -P /home/node/.openclaw/workspace/.openclaw -xdev -execdir /usr/bin/chown -h node:node {} +; fi || true' '''
+run = '''run --rm --user root --entrypoint sh openclaw-gateway -c 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; export PATH; /usr/bin/find -P /home/node/.openclaw -xdev \( ! -path /home/node/.openclaw/workspace -o -prune \) -execdir /usr/bin/chown -h node:node {} +; /usr/bin/chown -h node:node /home/node/.config /home/node/backups; /usr/bin/find -P /home/node/.config/openclaw -xdev -execdir /usr/bin/chown -h node:node {} +; if [ -d /home/node/.openclaw/workspace/.openclaw ] && [ ! -L /home/node/.openclaw/workspace/.openclaw ]; then /usr/bin/find -P /home/node/.openclaw/workspace/.openclaw -xdev -execdir /usr/bin/chown -h node:node {} +; fi || true' '''
 
 [[setup]]
-run = "run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js onboard --mode local --no-install-daemon --gateway-auth token --gateway-token-ref-env OPENCLAW_GATEWAY_TOKEN --skip-ui --suppress-gateway-token-output"
+run = "run --rm --entrypoint node openclaw-gateway dist/index.js onboard --mode local --no-install-daemon --gateway-auth token --gateway-token-ref-env OPENCLAW_GATEWAY_TOKEN --skip-ui --suppress-gateway-token-output"
 once = "data/.onboarded"
 interactive = true
 
-# Pinned after onboarding on every install; rateLimit clears the security
-# audit warning.
+# Infra keys, pinned after onboarding on every install. Serve reaches the
+# loopback-bound gateway from 127.0.0.1 with forwarded headers, hence
+# trustedProxies. Logs go to the mounted state dir instead of /tmp.
 [[setup]]
-run = '''run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set --batch-json '[{"path":"gateway.mode","value":"local"},{"path":"gateway.bind","value":"lan"},{"path":"gateway.controlUi.allowedOrigins","value":["http://localhost:18789","http://127.0.0.1:18789"]},{"path":"gateway.auth.rateLimit","value":{"maxAttempts":10,"windowMs":60000,"lockoutMs":300000}}]' '''
+run = '''run --rm --entrypoint node openclaw-gateway dist/index.js config set --batch-json '[{"path":"gateway.mode","value":"local"},{"path":"gateway.bind","value":"loopback"},{"path":"gateway.trustedProxies","value":["127.0.0.1"]},{"path":"gateway.auth.rateLimit","value":{"maxAttempts":10,"windowMs":60000,"lockoutMs":300000}},{"path":"logging.file","value":"/home/node/.openclaw/logs/openclaw.log"}]' '''
+
+[tailscale]
+service = "tailscale"
