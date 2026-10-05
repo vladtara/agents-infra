@@ -60,8 +60,10 @@ services:
       - ./data/workspace:/home/node/.openclaw/workspace
       - ./data/auth:/home/node/.config/openclaw
       - ./backups:/home/node/backups
-      ## Sandbox isolation (agents.defaults.sandbox) needs the host Docker socket,
-      ## which is root-equivalent on the host. Set DOCKER_GID to: stat -c '%g' /var/run/docker.sock
+      ## Sandbox isolation (agents.defaults.sandbox) is off. It needs a custom image
+      ## built with OPENCLAW_INSTALL_DOCKER_CLI=1 (published images have no Docker
+      ## CLI), the sandbox image, and the host Docker socket, which is
+      ## root-equivalent on the host. Set DOCKER_GID to: stat -c '%g' /var/run/docker.sock
       # - /var/run/docker.sock:/var/run/docker.sock
     # group_add:
     #   - "${DOCKER_GID:-999}"

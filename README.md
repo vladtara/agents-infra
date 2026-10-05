@@ -41,7 +41,7 @@ It is safe to rerun: existing `.env` values and secrets are kept, one-time steps
 ```sh
 python3 init.py openclaw     # install or update one component
 python3 init.py --list       # components and their state
-python3 init.py --yes        # no questions; interactive steps are skipped
+python3 init.py --yes        # no questions; OpenClaw onboards from the model key in its .env
 python3 init.py --skip-host  # components only, no host checks
 ```
 
@@ -68,7 +68,7 @@ rune install [components...]   # same as python3 init.py
 rune list                      # component state
 rune ps                        # all compose projects on the host
 rune validate                  # docker compose config for every component
-rune update                    # git pull, then pull images and recreate installed components
+rune update                    # git pull, then each installed component's update (Tailscale last; use tmux over tailnet SSH)
 rune test                      # installer unit tests
 
 rune tailscale::up | down | logs | status
@@ -123,7 +123,8 @@ Each component folder holds:
    [[setup]]                       # `docker compose <run>`, in order, before `up -d --wait`
    run = "run --rm app migrate"
    once = "data/.migrated"         # skip while this marker exists; created on success
-   interactive = false             # true: skipped with --yes
+   interactive = false             # true: skipped with --yes, unless headless is set
+   # headless = "run -T --rm app migrate --yes"  # with interactive = true: used instead under --yes
 
    [tailscale]                     # optional: print the URL of this stack's Tailscale sidecar
    service = "tailscale"

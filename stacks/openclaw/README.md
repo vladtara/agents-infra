@@ -18,7 +18,7 @@ Requests from Serve arrive over loopback with forwarded headers. `init.py` sets 
 2. Open `https://openclaw.<tailnet>.ts.net` on a device in your tailnet and paste the gateway token (`OPENCLAW_GATEWAY_TOKEN` in `stacks/openclaw/.env`).
 3. The browser shows up as a pending device: `rune openclaw::devices`, then `rune openclaw::approve <requestId>`.
 
-If onboarding was skipped (`init.py --yes`), run `rune openclaw::onboard`.
+With `init.py --yes`, onboarding runs non-interactively from the model key in `.env` (`ANTHROPIC_API_KEY` first, then `OPENAI_API_KEY`), so fill one in before an unattended install. Run `rune openclaw::onboard` later for the interactive wizard (models, auth, channels).
 
 ## Where the data lives
 
@@ -55,26 +55,32 @@ Treat `data/config`, `data/auth` and `backups/` as credentials: OAuth tokens are
 | `rune openclaw::tui` | terminal chat; works when Tailscale is down |
 | `rune openclaw::status` | gateway, channels, sessions |
 | `rune openclaw::doctor` | diagnose config and state |
-| `rune openclaw::configure` | interactive wizard: models, channels, gateway |
+| `rune openclaw::configure` | interactive wizard: workspace, web, channels, plugins, skills; do not enable Tailscale there |
 | `rune openclaw::cli <args>` | any `openclaw` command, e.g. `channels list`, `agents list`, `logs` |
 | `rune openclaw::dashboard` | the gateway's own Control UI link (loopback); remotely use `rune openclaw::url` |
 | `rune openclaw::devices`, `rune openclaw::approve <id>` | pair browsers and apps |
 | `rune openclaw::audit` | security audit |
 | `rune openclaw::backup` | verified archive into `backups/` |
 | `rune openclaw::url` | tailnet URL |
-| `rune openclaw::up`, `down`, `restart`, `logs`, `update` | lifecycle |
+| `rune openclaw::onboard` | change model provider or auth, add channels (interactive) |
+| `rune openclaw::up`, `down`, `restart`, `logs` | lifecycle |
+| `rune openclaw::update` | verified backup, pull, recreate, `doctor --json` |
 
 Without rune: `cd stacks/openclaw`, then `docker compose run --rm openclaw-cli <command>` or `docker compose exec openclaw-gateway bash`.
 
 ## Configuration
 
-OpenClaw owns `data/config/openclaw.json` (JSON5 with a strict schema: unknown keys stop the gateway). Change it with:
+OpenClaw owns `data/config/openclaw.json` (JSON5 with a strict schema). An invalid direct edit stops the next start; hot reload skips invalid edits and keeps the last good config. Change it with:
 
 - the Control UI **Config** tab (form or raw JSON),
-- `rune openclaw::configure`,
+- `rune openclaw::configure` (settings) or `rune openclaw::onboard` (model provider and auth),
 - `rune openclaw::cli config get|set|unset <path> [value]` and `rune openclaw::cli config validate`.
 
-Most changes apply live (agents, models, channels, tools, skills, plugins, logging); gateway network settings restart the gateway automatically. OpenClaw rewrites the file as plain JSON, so comments do not survive. Secrets belong in `.env` (passed to the gateway) and can be referenced from config as `${VAR}`.
+Most changes apply live (agents, models, channels, tools, skills, plugins, logging); gateway network settings restart the gateway automatically. OpenClaw rewrites the file as plain JSON, so comments do not survive.
+
+API keys live only in `.env`: onboarding runs with `--secret-input-mode ref`, so auth profiles store references such as `{source: "env", id: "ANTHROPIC_API_KEY"}`. To rotate a key, edit `.env` and run `rune openclaw::up` (`.env` changes need a recreate, not a restart). Other secrets can be referenced from config as `${VAR}`.
+
+Do not turn on Tailscale in `configure`: the sidecar already serves the gateway, and the image has no `tailscale` CLI, so a managed Serve or Funnel would keep the gateway from starting. `init.py` pins it off.
 
 `init.py` re-applies these keys on every run. Change them in `component.toml`, not by hand:
 
@@ -83,8 +89,25 @@ Most changes apply live (agents, models, channels, tools, skills, plugins, loggi
 | `gateway.mode` | `local` | Docker setup |
 | `gateway.bind` | `loopback` | only the sidecar's Serve can reach the gateway |
 | `gateway.trustedProxies` | `["127.0.0.1"]` | accept Serve's forwarded requests |
+| `gateway.tailscale.mode` | `off` | the sidecar owns Serve |
 | `gateway.auth.rateLimit` | 10 attempts per minute, 5 minute lockout | brute-force protection |
 | `logging.file` | `/home/node/.openclaw/logs/openclaw.log` | logs survive container recreation (default is `/tmp`) |
+
+With `logging.file` set, logs rotate at 100 MB and keep five archives (about 600 MB). Lower it with `rune openclaw::cli config set logging.maxFileBytes <bytes>`.
+
+## Updates
+
+`rune openclaw::update` writes a verified backup, pulls the tags in `.env`, recreates the stack and runs `doctor --json`. On start the image migrates config and state itself (`doctor --fix`) and keeps `*.pre-startup-migration-*.bak` files; keep them with the backup, because a rollback needs the old image and the matching state.
+
+Plain version tags such as `2026.9.8` never change, so they get no OS security refreshes. Bump `OPENCLAW_IMAGE` to a newer release (or a dated `-rYYYYMMDD` tag when one exists) and run `rune openclaw::update`.
+
+A later OpenClaw release (already on upstream `main`) needs `pid: "service:openclaw-gateway"` on the `openclaw-cli` service; without it `tui`, `status` and `backup` refuse to run. Add it when you upgrade past 2026.9.8.
+
+## Optional features
+
+- **Browser control** (`openclaw browser`, the Control UI browser panel): Chromium must be inside the gateway image. Set `OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:2026.9.8-browser` and run `rune openclaw::update`. Do not install Chromium at runtime; it does not survive recreation.
+- **Sandbox** (agent tools in separate containers): needs a custom image with the Docker CLI, the sandbox image and the Docker socket; see the comment in `compose.yaml`.
+- **Gmail webhooks** (`openclaw webhooks gmail`): Pub/Sub needs a public HTTPS endpoint (Tailscale Funnel on its own port in `tailscale/serve.json`, routed only to the watcher on `127.0.0.1:8788`), a custom image with `gog`, and a working sandbox. Plain `/hooks` endpoints already work for callers on the tailnet with a dedicated hook token.
 
 ## Troubleshooting
 
@@ -93,4 +116,6 @@ Most changes apply live (agents, models, channels, tools, skills, plugins, loggi
 - **Gateway lost its network after the sidecar restarted on its own:** `rune openclaw::restart` recreates the gateway in the sidecar's current namespace.
 - **`proxy_attribution_required`:** `gateway.trustedProxies` is missing; rerun `python3 init.py openclaw`.
 - **`blocked plugin candidate: suspicious ownership`:** files not owned by uid 1000; rerun `python3 init.py openclaw`, which fixes ownership.
+- **Gateway exits with code 78 after an upgrade:** a migration needs repair. `docker compose stop openclaw-gateway`, then `docker compose run --rm --entrypoint node openclaw-gateway dist/index.js doctor --fix`, then `rune openclaw::up`.
+- **Headless onboarding fails (`init.py --yes`):** set `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` in `stacks/openclaw/.env` and rerun, or run `rune openclaw::onboard`.
 - **Logs:** `data/config/logs/openclaw.log`, or `rune openclaw::logs` for container output.
