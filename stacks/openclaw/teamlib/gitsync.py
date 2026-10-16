@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from teamlib import TeamError, scan
+from teamlib.contract import REQUIRED_FILES
 from teamlib.tree import Tree, from_rev
 
 ATTEMPTS = 3
@@ -188,6 +189,24 @@ class Sync:
         resolved_note = f"; upstream kept for {', '.join(sorted(set(resolved)))}" if resolved else ""
         self.say(f"  conflict with git: this VM's commits are saved in {where}, git wins conflicting lines{resolved_note}")
 
+    def drop_removed_agents(self, stamp: str) -> None:
+        """New VM files in agent folders git removed meanwhile: rescue them and keep them out of git."""
+        listing = self.git("ls-tree", "-r", "-z", "--name-only", "HEAD", "workspaces/").stdout
+        found: dict[str, set[str]] = {}
+        for path in filter(None, listing.split("\0")):
+            parts = path.split("/")
+            if len(parts) >= 3:
+                found.setdefault(parts[1], set()).add(parts[2])
+        removed = sorted(f"workspaces/{folder}" for folder, names in found.items() if not set(REQUIRED_FILES) <= names)
+        if not removed:
+            return
+        branch = f"rescue/{self.vm}/{stamp}-removed"
+        pushed = self._save(branch, "HEAD")
+        self.git("rm", "-r", "-q", "--cached", "--", *removed)
+        self.git("commit", "-q", "--no-verify", "-m", f"sync: {self.vm} drop files in agent folders removed in git")
+        where = branch if pushed else f"{branch} (local only: push failed)"
+        self.say(f"  agent folders removed in git: {', '.join(removed)}; this VM's new files there are saved in {where} and stay on this VM")
+
     def push(self) -> bool:
         """Push local commits. False when the remote moved on (fetch and rebase again)."""
         ahead = int(self.git("rev-list", "--count", f"{self.upstream}..HEAD").stdout.strip())
@@ -209,6 +228,7 @@ class Sync:
             if behind:
                 check(from_rev(self.git, self.upstream))
             self.rebase(stamp)
+            self.drop_removed_agents(stamp)
             if behind:
                 self.say(f"  pulled {behind} commit(s)")
             if self.push():

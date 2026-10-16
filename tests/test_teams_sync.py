@@ -260,6 +260,24 @@ class SyncTest(SyncCase):
         self.assertFalse((self.paths.agents_d / "tech-reviewer.json5").exists())
         self.assertIn("removed tech-reviewer", self.output())
 
+    def test_new_memory_of_an_agent_removed_in_git_is_not_pushed(self):
+        self.vm_write("workspaces/reviewer/memory/fresh.md", "written after the person removed me\n")
+        self.person_push({
+            "workspaces/reviewer": None,
+            "agents/reviewer.json5": None,
+            "team.json5": '{"description": "Tech team agent"}\n',
+        })
+        self.assertTrue(self.sync(), self.output())
+        self.assertFalse([f for f in self.upstream("ls-tree", "-r", "--name-only", "main").split() if "reviewer" in f])
+        self.assertNotIn("tech-reviewer", self.roster())
+        branch = next(b.strip() for b in self.upstream("branch", "--list", "rescue/*").splitlines())
+        self.assertTrue(branch.endswith("-removed"), branch)
+        self.assertIn("written after", self.upstream("show", f"{branch}:workspaces/reviewer/memory/fresh.md"))
+        self.assertTrue((self.clone / "workspaces/reviewer/memory/fresh.md").exists())
+        self.assertIn("agent folders removed in git: workspaces/reviewer", self.output())
+        self.assertTrue(self.sync(), self.output())
+        self.assertIn("not committed: workspaces/reviewer/ is not an agent folder in git", self.output())
+
     def test_agent_added_in_git_joins_the_gateway(self):
         self.person_push({"workspaces/writer/SOUL.md": "# Soul\n", "workspaces/writer/AGENTS.md": "# Notes\n"})
         self.assertTrue(self.sync(), self.output())
