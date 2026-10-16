@@ -2,7 +2,7 @@ import json
 import unittest
 
 from tests.teamfixtures import EXAMPLE, StackCase, run_git
-from teamlib import commands, gateway
+from teamlib import TeamError, commands, gateway
 
 KEY = "sk-ant-" + "b" * 30
 
@@ -192,6 +192,33 @@ class SyncTest(SyncCase):
         self.assertTrue(self.sync(), self.output())
         self.assertFalse(marker.exists())
         self.assertIn("workspaces/coordinator/memory/a.md", self.upstream("ls-tree", "-r", "--name-only", "main"))
+
+    def assert_remove_refused(self, *expected):
+        with self.assertRaises(TeamError) as caught:
+            commands.remove(self.ctx, "tech")
+        for text in expected:
+            self.assertIn(text, str(caught.exception))
+        self.assertTrue(self.clone.is_dir())
+        self.assertTrue(self.paths.git_dir("tech").is_dir())
+
+    def test_remove_keeps_a_local_only_rescue_branch(self):
+        self.vm_write("team.json5", f'{{"description": "{KEY}"}}\n')
+        self.assertTrue(self.sync(), self.output())
+        branch = self.vm_git("tech", "branch", "--list", "rescue/*").stdout.strip()
+        self.assert_remove_refused(f"local-only branch {branch}", "teams.py remove tech --force")
+        commands.remove(self.ctx, "tech", force=True)
+        self.assertFalse(self.clone.exists())
+        self.assertFalse(self.paths.git_dir("tech").exists())
+
+    def test_remove_keeps_a_stash(self):
+        self.vm_write("workspaces/reviewer/USER.md", f"my key {KEY}\n")
+        self.person_push({"workspaces/reviewer/USER.md": "# The people\n\nUpdated by a person.\n"})
+        self.assertTrue(self.sync(), self.output())
+        self.assert_remove_refused("1 stash entry")
+
+    def test_remove_keeps_settings_edits(self):
+        self.vm_write("team.json5", '{"description": "edited on the vm, not synced"}\n')
+        self.assert_remove_refused("team.json5")
 
     def test_nested_git_folder_is_skipped(self):
         run_git(self.clone / "workspaces/reviewer", "init", "-q")

@@ -220,10 +220,21 @@ class Sync:
         return int(out[0]), int(out[1])
 
     def unpushed(self) -> list[str]:
-        """Local changes and commits that would be lost by deleting the clone."""
-        pending = [path for _, path in self.status("workspaces")]
+        """What deleting the clone would lose: local changes, unpushed commits, stashes, local-only rescue branches."""
+        pending = [path for _, path in self.status(".")]
         ahead, _ = self.ahead_behind()
-        return pending + ([f"{ahead} unpushed commit(s)"] if ahead else [])
+        if ahead:
+            pending.append(f"{ahead} unpushed commit(s)")
+        stashes = [line for line in self.git("stash", "list").stdout.splitlines() if line.strip()]
+        if stashes:
+            pending.append(f"{len(stashes)} stash entr{'y' if len(stashes) == 1 else 'ies'}")
+        listing = self.git("for-each-ref", "--format=%(refname) %(objectname)", "refs/heads/rescue", "refs/remotes/origin/rescue").stdout
+        refs = dict(line.split() for line in listing.splitlines() if line.strip())
+        for ref, oid in sorted(refs.items()):
+            name = ref.removeprefix("refs/heads/")
+            if ref.startswith("refs/heads/") and refs.get(f"refs/remotes/origin/{name}") != oid:
+                pending.append(f"local-only branch {name}")
+        return pending
 
     def _save(self, branch: str, rev: str, push: bool = True) -> bool:
         self.git("branch", "-f", branch, rev)

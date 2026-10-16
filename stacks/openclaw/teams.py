@@ -42,6 +42,7 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     sync.add_argument("team", nargs="?")
     remove = sub.add_parser("remove", help="remove a team's agents and clone from this VM")
     remove.add_argument("team")
+    remove.add_argument("--force", action="store_true", help="also delete data that exists only on this VM")
     sub.add_parser("list", help="teams, agents and git state")
     sub.add_parser("apply", help="clone missing teams and refresh agents (run by init.py)")
     return parser.parse_args(argv)
@@ -73,7 +74,7 @@ def main(argv: list[str] | None = None, *, runner=None, stack: Path = STACK, rep
         if args.command == "sync":
             return 0 if commands.sync(ctx, args.team) else 1
         if args.command == "remove":
-            commands.remove(ctx, args.team)
+            commands.remove(ctx, args.team, force=args.force)
         elif args.command == "list":
             commands.list_teams(ctx)
         else:

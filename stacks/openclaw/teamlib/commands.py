@@ -92,17 +92,18 @@ def sync_team(ctx, team: Team) -> list[str]:
     return gateway.apply_team(ctx, team.name, from_rev(state.git, "HEAD"))
 
 
-def remove(ctx, name: str) -> None:
-    """team-remove: refuse while changes are unpushed, then drop agents, clone and registry entry."""
+def remove(ctx, name: str, force: bool = False) -> None:
+    """team-remove: refuse while data exists only on this VM (unless force), then drop agents, clone and registry entry."""
     team = _selected(ctx, name)[0]
     clone = ctx.paths.clone(name)
-    if clone.is_dir():
+    if clone.is_dir() and ctx.paths.git_dir(name).is_dir() and not force:
         pending = _sync(ctx, team).unpushed()
         if pending:
             shown = ", ".join(pending[:10]) + (", ..." if len(pending) > 10 else "")
             raise TeamError(
-                f"team {name} has changes that are not in git: {shown}. "
-                f"Run rune openclaw::team-sync {name} first, or delete those files"
+                f"team {name} has data that exists only on this VM: {shown}. "
+                f"Sync it with rune openclaw::team-sync {name}, look at it with rune openclaw::team-git {name} <git command>, "
+                f"or remove anyway, deleting it: python3 stacks/openclaw/teams.py remove {name} --force"
             )
     removed = gateway.remove_team(ctx, name)
     if clone.is_dir():

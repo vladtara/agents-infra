@@ -56,7 +56,7 @@ class RemoveTest(StackCase):
     def test_refuses_unpushed_changes_then_removes(self):
         commands.add(self.ctx, "tech", str(EXAMPLE))
         (self.paths.clone("tech") / "workspaces/coordinator/memory/x.md").write_text("x\n")
-        with self.assertRaisesRegex(TeamError, "not in git: workspaces/coordinator/memory/x.md"):
+        with self.assertRaisesRegex(TeamError, "exists only on this VM: workspaces/coordinator/memory/x.md"):
             commands.remove(self.ctx, "tech")
         self.assertTrue(commands.sync(self.ctx, "tech"))
         commands.remove(self.ctx, "tech")
@@ -117,7 +117,10 @@ class MainTest(StackCase):
         self.assertEqual(self.main("sync")[0], 0)
         code, out = self.main("list")
         self.assertIn("tech-reviewer", out)
-        self.assertEqual(self.main("remove", "tech")[0], 0)
+        (self.paths.clone("tech") / "workspaces/coordinator/memory/x.md").write_text("x\n")
+        with mock.patch("sys.stderr", new_callable=io.StringIO):
+            self.assertEqual(self.main("remove", "tech")[0], 1)
+        self.assertEqual(self.main("remove", "tech", "--force")[0], 0)
 
     def test_errors_exit_non_zero(self):
         with mock.patch("sys.stderr", new_callable=io.StringIO) as err:
