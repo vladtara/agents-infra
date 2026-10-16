@@ -109,4 +109,5 @@ def resolve(team: str, tree: Tree, parsed: dict, errors: dict[str, str]) -> Reso
 def _prefix_allow_agents(team: str, entry: dict, folders: set[str]) -> None:
     subagents = entry.get("subagents")
     if isinstance(subagents, dict) and isinstance(subagents.get("allowAgents"), list):
-        subagents["allowAgents"] = [agent_id(team, a) if a in folders else a for a in subagents["allowAgents"]]
+        # Non-strings stay as written; OpenClaw's validation rejects them with a clear path.
+        subagents["allowAgents"] = [agent_id(team, a) if isinstance(a, str) and a in folders else a for a in subagents["allowAgents"]]

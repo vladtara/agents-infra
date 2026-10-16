@@ -61,6 +61,10 @@ class ResolveTest(unittest.TestCase):
         t = tree({"a": GOOD, "b": GOOD}, {"team.json5": '{"subagents": {"allowAgents": ["b", "main", "*"]}}'})
         self.assertEqual(resolve(t).entries["tech-a"]["subagents"]["allowAgents"], ["tech-b", "main", "*"])
 
+    def test_allow_agents_leaves_non_strings_for_openclaw_to_reject(self):
+        t = tree({"a": GOOD, "b": GOOD}, {"team.json5": '{"subagents": {"allowAgents": [{"agent": "b"}, "b", 5]}}'})
+        self.assertEqual(resolve(t).entries["tech-a"]["subagents"]["allowAgents"], [{"agent": "b"}, "tech-b", 5])
+
     def test_plugins(self):
         t = tree(texts={"team.json5": "{}", "plugins.json": '{"plugins": ["@openclaw/voice-call", "foo@1.2.0"]}'})
         self.assertEqual(resolve(t).plugins, ["@openclaw/voice-call", "foo@1.2.0"])
