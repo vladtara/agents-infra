@@ -108,7 +108,14 @@ def apply_team(ctx, team: str, tree: Tree) -> list[str]:
     new = plan_roster(config, team, resolved.entries)
     before = owned(team, config.get("agents", {}).get("entries", {}))
     stale = sorted(before - resolved.entries.keys())
+    stale_files = [] if INLINE else [ctx.paths.agents_d / f"{key}.json5" for key in stale]
+    if stale_files:
+        current.update(ctx.runner.read_files(stale_files))
     ops = [(path, body) for path, body in files.items() if current.get(path) != body]
+    # Refuse when the Control UI saved openclaw.json or an agent file we replace or delete since we read them.
+    guarded = [path for path, _ in ops] + stale_files
+    expect = {ctx.paths.openclaw_json: _sha(text)}
+    expect.update({path: None if current.get(path) is None else _sha(current[path]) for path in guarded})
     if new != config:
         ops.append((ctx.paths.openclaw_json, _dump(new)))
     if not INLINE:
@@ -116,7 +123,7 @@ def apply_team(ctx, team: str, tree: Tree) -> list[str]:
     problems = []
     if ops:
         _validate(ctx, plan_roster(config, team, resolved.entries, inline=True))
-        ctx.runner.write_files(ops, expect={ctx.paths.openclaw_json: _sha(text)})
+        ctx.runner.write_files(ops, expect=expect)
         added = sorted(resolved.entries.keys() - before)
         note = "".join(f" ({word} {', '.join(ids)})" for word, ids in (("added", added), ("removed", stale)) if ids)
         ctx.say(f"  agents: {', '.join(sorted(resolved.entries))}{note}")

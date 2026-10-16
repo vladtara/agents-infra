@@ -4,7 +4,7 @@ from pathlib import Path
 
 from tests.teamfixtures import EXAMPLE, StackCase, commit_dir, git_in
 from teamlib import TeamError, gateway
-from teamlib.tree import from_rev
+from teamlib.tree import Tree, from_rev
 
 INC = gateway.include
 
@@ -116,6 +116,35 @@ class ApplyTest(StackCase):
         with self.assertRaisesRegex(TeamError, "changed while teams.py was applying"):
             gateway.apply_team(self.ctx, "tech", self.tree)
         self.assertTrue(self.config()["edited"])
+
+    def race_on(self, agent, text):
+        original = self.runner.read_files
+
+        def racing_read(paths):
+            found = original(paths)
+            if agent in paths:
+                agent.write_text(text)
+            return found
+
+        self.runner.read_files = racing_read
+
+    def test_agent_file_changed_meanwhile(self):
+        gateway.apply_team(self.ctx, "tech", self.tree)
+        agent = self.paths.agents_d / "tech-reviewer.json5"
+        agent.write_text('{"name": "first UI save"}\n')
+        self.race_on(agent, '{"name": "second UI save"}\n')
+        with self.assertRaisesRegex(TeamError, "changed while teams.py was applying"):
+            gateway.apply_team(self.ctx, "tech", self.tree)
+        self.assertEqual(json.loads(agent.read_text())["name"], "second UI save")
+
+    def test_removed_agent_file_changed_meanwhile(self):
+        gateway.apply_team(self.ctx, "tech", self.tree)
+        agent = self.paths.agents_d / "tech-reviewer.json5"
+        smaller = Tree({"coordinator": self.tree.workspaces["coordinator"]}, frozenset(), {"team.json5": "{}"})
+        self.race_on(agent, '{"name": "UI save"}\n')
+        with self.assertRaisesRegex(TeamError, "changed while teams.py was applying"):
+            gateway.apply_team(self.ctx, "tech", smaller)
+        self.assertTrue(agent.exists())
 
     def test_remove_team(self):
         gateway.apply_team(self.ctx, "tech", self.tree)
