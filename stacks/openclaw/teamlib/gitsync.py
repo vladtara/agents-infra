@@ -54,6 +54,7 @@ class Sync:
         nested = {p.parent.name for p in (self.clone / "workspaces").glob("*/.git")}
         for folder in sorted(nested):
             self.say(f"  warning: workspaces/{folder} holds its own .git; it is not synced until you remove it")
+        self.git("reset", "-q")  # the commit holds only what this sync checked
         listing = self.git("ls-tree", "-z", "--name-only", "HEAD", "workspaces/").stdout
         agents = {path.split("/")[1] for path in listing.split("\0") if path}
         paths, strays = [], set()
@@ -76,6 +77,35 @@ class Sync:
             )
         if paths:
             self.git("add", "--all", "--pathspec-from-file=-", "--pathspec-file-nul", input=nul(paths))
+        # A file can change between the scan above and `git add`: check what was really staged.
+        blocked = self.staged_problems(secrets)
+        if blocked:
+            self.git("reset", "-q", "--pathspec-from-file=-", "--pathspec-file-nul", input=nul(sorted(blocked)))
+            for path, reason in sorted(blocked.items()):
+                self.say(f"  not committed: {path} ({reason})")
+
+    def staged_problems(self, secrets: list[str]) -> dict[str, str]:
+        """Why each staged file must not be committed, judged on the staged content itself."""
+        raw = self.git("diff", "--cached", "--raw", "-z", "--no-renames", "--no-abbrev", "--diff-filter=d").stdout
+        items = [item for item in raw.split("\0") if item]
+        problems, blobs = {}, []
+        for meta, path in zip(items[0::2], items[1::2]):
+            _, mode, _, oid, _ = meta.split()
+            if mode == "160000":
+                problems[path] = "nested repository"
+            else:
+                blobs.append((path, oid))
+        if blobs:
+            data = self.git("cat-file", "--batch", binary=True, input="".join(f"{oid}\n" for _, oid in blobs)).stdout
+            offset = 0
+            for path, _ in blobs:
+                end = data.index(b"\n", offset)
+                size = int(data[offset:end].split()[2])
+                reason = scan.content_problem(data[end + 1:end + 1 + size], secrets)
+                if reason:
+                    problems[path] = reason
+                offset = end + 1 + size + 1
+        return problems
 
     def commit(self, when: datetime) -> bool:
         if self.git("diff", "--cached", "--quiet", check=False).returncode == 0:
@@ -93,10 +123,10 @@ class Sync:
             return None
         paths = [path for _, path in changed]
         self.git("add", "--all", "--pathspec-from-file=-", "--pathspec-file-nul", input=nul(paths))
+        blocked = [f"{path}: {reason}" for path, reason in sorted(self.staged_problems(secrets).items())]
         tree = self.git("write-tree").stdout.strip()
         commit = self.git("commit-tree", tree, "-p", "HEAD", "-m", f"rescue: settings edited on {self.vm}").stdout.strip()
         branch = f"rescue/{self.vm}/{stamp}-settings"
-        blocked = [f"{path}: {reason}" for path in paths if (reason := scan.problem(self.clone / path, secrets))]
         pushed = self._save(branch, commit, push=not blocked)
         self.git("reset", "-q")
         tracked = [path for xy, path in changed if xy != "??"]

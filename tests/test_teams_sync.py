@@ -101,6 +101,42 @@ class SyncTest(SyncCase):
         self.assertIn("edited on vm", self.upstream("show", f"{branch}:team.json5"))
         self.assertIn("reset to git: notes.txt, team.json5", self.output())
 
+    def stage_race(self, rel, text):
+        """Rewrite rel right before teams.py stages files: after its scan, before git reads the file."""
+        def race(cwd, args):
+            if args[:2] == ("add", "--all"):
+                self.vm_write(rel, text)
+        self.runner.before_git = race
+
+    def test_prestaged_files_are_checked_again(self):
+        self.vm_write("workspaces/coordinator/memory/s.md", f"key {KEY}\n")
+        self.vm_write("notes.txt", "stray\n")
+        self.vm_git("tech", "add", "workspaces/coordinator/memory/s.md", "notes.txt")
+        self.assertTrue(self.sync(), self.output())
+        files = self.upstream("ls-tree", "-r", "--name-only", "main")
+        self.assertNotIn("s.md", files)
+        self.assertNotIn("notes.txt", files)
+        self.assertIn("not committed: workspaces/coordinator/memory/s.md (looks like it contains a key or token)", self.output())
+
+    def test_file_changed_after_the_scan_is_checked_again(self):
+        self.vm_write("workspaces/coordinator/memory/race.md", "harmless\n")
+        self.stage_race("workspaces/coordinator/memory/race.md", f"key {KEY}\n")
+        self.assertTrue(self.sync(), self.output())
+        self.assertNotIn("race.md", self.upstream("ls-tree", "-r", "--name-only", "main"))
+        self.assertIn("not committed: workspaces/coordinator/memory/race.md (looks like it contains a key or token)", self.output())
+
+    def test_settings_cleaned_after_staging_are_not_pushed(self):
+        self.vm_write("team.json5", f'{{"description": "{KEY}"}}\n')
+
+        def clean_after_staging(cwd, args):
+            if args[:1] == ("write-tree",):
+                self.vm_write("team.json5", '{"description": "harmless"}\n')
+
+        self.runner.before_git = clean_after_staging
+        self.assertTrue(self.sync(), self.output())
+        self.assertEqual(self.upstream("branch", "--list", "rescue/*"), "")
+        self.assertIn("not pushed because team.json5: looks like it contains a key or token", self.output())
+
     def test_secret_in_settings_edit_is_not_pushed(self):
         self.vm_write("team.json5", f'{{"description": "{KEY}"}}\n')
         self.assertTrue(self.sync(), self.output())

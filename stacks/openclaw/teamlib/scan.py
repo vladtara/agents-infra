@@ -51,9 +51,17 @@ def problem(path: Path, secrets: list[str]) -> str | None:
     try:
         if path.stat().st_size > MAX_BYTES:
             return "larger than 5 MB"
-        text = path.read_bytes().decode("utf-8", errors="ignore")
+        data = path.read_bytes()
     except OSError as exc:
         return f"unreadable ({exc.strerror})"
+    return content_problem(data, secrets)
+
+
+def content_problem(data: bytes, secrets: list[str]) -> str | None:
+    """Why this content must not be committed, or None."""
+    if len(data) > MAX_BYTES:
+        return "larger than 5 MB"
+    text = data.decode("utf-8", errors="ignore")
     if any(secret in text for secret in secrets):
         return "contains a value from .env"
     if any(pattern.search(text) for pattern in PATTERNS):
