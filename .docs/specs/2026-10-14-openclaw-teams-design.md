@@ -325,3 +325,13 @@ Changes to the design:
 - **The example team sets no model**, so it runs on the provider onboarding chose: `team.json5` has `description` and `subagents.allowAgents: ["reviewer"]`; `agents/reviewer.json5` sets `name`, `description` and `allowAgents: []`.
 - **Rescue branch names:** `rescue/<vm>/<YYYYMMDD-HHMMSS>` for conflicts, with `-settings` appended for settings edited on the VM.
 - **Sync output** names what happened: commits pushed and pulled, agents added or removed, files left out, rescue branches.
+
+## Addendum 2 (2026-10-16): fixes from the code reviews
+
+- **Git data outside the gateway.** Each clone's git directory lives in `data/team-gitdirs/<team>` (`/gitdirs` in `team-git` only); `data/teams/<team>` holds only the files. teams.py runs every git command with `GIT_DIR`/`GIT_WORK_TREE` and `core.hooksPath=/dev/null`, so an agent cannot plant a hook or config in the clone that would run in `team-git`, next to the deploy keys. `rune openclaw::team-git <team> <git command>` runs git on a clone for people.
+- **Secrets are checked on the staged content.** Sync starts from a clean index, stages, then scans the staged blobs themselves and unstages any that fail; the settings rescue is checked the same way before its branch is pushed.
+- **Removal keeps recovery data.** `team-remove` is refused while the clone has local changes (settings included), unpushed commits, stash entries or rescue branches that exist only on the VM; `teams.py remove <team> --force` deletes them.
+- **No incomplete agents reach git.** New VM files in an agent folder that git removed meanwhile are saved to `rescue/<vm>/<time>-removed` and untracked before the push.
+- **Stash instead of stuck syncs.** A skipped file that git changes, deletes or also adds goes live in git's version; the VM's copy is kept in the clone's stash.
+- **Concurrent Control UI saves to agent files** (not only `openclaw.json`) make teams.py refuse to write.
+- **Contract hardening:** overlapping team names are refused in a hand-written `teams.toml` too; plugin specs starting with `-` are rejected; non-string `allowAgents` entries are left for OpenClaw's validation; teams need `OPENCLAW_IMAGE` 2026.10.3 or later.

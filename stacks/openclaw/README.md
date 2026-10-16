@@ -37,7 +37,7 @@ Everything is under `stacks/openclaw/`, ignored by git, owned by uid 1000.
 | `backups/` | `/home/node/backups` | `rune openclaw::backup` archives |
 | `data/teams/` | `/home/node/teams` | Team repo clones; team agents work in their `workspaces/` ([TEAMS.md](TEAMS.md)) |
 | `data/config/agents.d/` | `~/.openclaw/agents.d` | Generated team agent entries |
-| `data/team-keys/`, `data/team-remotes/` | `team-git` only | Team deploy keys; bare repos made from local folders |
+| `data/team-keys/`, `data/team-gitdirs/`, `data/team-remotes/` | `team-git` only | Team deploy keys; git data of the team clones; bare repos made from local folders |
 
 Treat `data/config`, `data/auth` and `backups/` as credentials: OAuth tokens are stored as plain text in SQLite. Never copy the live `*.sqlite` files; use `rune openclaw::backup` or stop the stack first. The workspace is a good candidate for its own private git repo.
 
@@ -50,7 +50,7 @@ Treat `data/config`, `data/auth` and `backups/` as credentials: OAuth tokens are
 
 ## Teams
 
-Groups of agents with their own personas, memory and settings, each kept in a private git repo and synced by hand: `rune openclaw::team-add <team> <source>`, `team-sync [team]`, `teams`, `team-remove <team>`. Start from the example in `examples/teams/tech/`; the repo structure, sync rules and conflict handling are in [TEAMS.md](TEAMS.md).
+Groups of agents with their own personas, memory and settings, each kept in a private git repo and synced by hand: `rune openclaw::team-add <team> <source>`, `team-sync [team]`, `teams`, `team-remove <team>`, `team-git <team> <git command>`. Start from the example in `examples/teams/tech/`; the repo structure, sync rules and conflict handling are in [TEAMS.md](TEAMS.md).
 
 ## Plugins and skills
 

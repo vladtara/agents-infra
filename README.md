@@ -90,7 +90,7 @@ rune dockge::up | down | logs | update
 rune openclaw::up | down | restart | logs | update
 rune openclaw::shell | tui | status | doctor | configure | onboard | backup | url
 rune openclaw::cli channels list
-rune openclaw::team-add <team> <source> | team-sync [team] | teams | team-remove <team>
+rune openclaw::team-add <team> <source> | team-sync [team] | teams | team-remove <team> | team-git <team> <git command>
 ```
 
 Without rune, use `docker compose` inside a component folder; the project name is the folder name, the same one Dockge uses.
