@@ -5,6 +5,7 @@ import getpass
 import json
 import os
 import shlex
+import subprocess
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -21,6 +22,7 @@ LOGIN_FIX = (
 )
 LOGIN_HINT = "If the {service} container is unhealthy, its node is not logged in: " + LOGIN_FIX
 NOT_LOGGED_IN = "the {service} node is not logged in: " + LOGIN_FIX
+ACTION_PREFIX = "action: "
 HTTPS_OFF = (
     "HTTPS certificates are off in your tailnet, so Serve is not applied and the URL does not load. "
     "Enable them at https://login.tailscale.com/admin/dns (HTTPS Certificates > Enable HTTPS); "
@@ -124,6 +126,7 @@ def install(component: Component, context: dict[str, str], *, prompt: Callable[[
     was_running = is_running(path)
     compose(path, "pull")
     ran_setup = False
+    actions = []
     for step in component.setup:
         marker = path / step.once if step.once else None
         if marker and marker.exists():
@@ -136,7 +139,10 @@ def install(component: Component, context: dict[str, str], *, prompt: Callable[[
             run = step.headless
         if step.note:
             print(f"  note: {step.note}")
-        compose(path, *shlex.split(components.expand(run, context)))
+        if step.script:
+            actions += run_script(component, step.script, context)
+        else:
+            compose(path, *shlex.split(components.expand(run, context)))
         ran_setup = True
         if marker:
             marker.parent.mkdir(parents=True, exist_ok=True)
@@ -155,10 +161,43 @@ def install(component: Component, context: dict[str, str], *, prompt: Callable[[
         compose(path, "restart", *[s for s in services if s != component.tailscale_service])
 
     if not component.tailscale_service:
-        return []
+        return actions
     url, problem = tailnet_check(component)
     print(f"  tailnet: {url or problem}")
-    return [problem] if problem else []
+    return actions + ([problem] if problem else [])
+
+
+def run_script(component: Component, script: str, context: dict[str, str]) -> list[str]:
+    """Run `python3 <component>/<script> <args>` in the component folder.
+
+    Output is streamed; lines starting with "action: " are also returned
+    for the Action needed list. A non-zero exit raises CommandError.
+    """
+    argv = shlex.split(components.expand(script, context))
+    label = shlex.join(["python3", *argv])
+    env = {
+        **os.environ,
+        "REPO_DIR": context["repo_dir"],
+        "STACKS_DIR": context["stacks_dir"],
+        "COMPONENT_DIR": str(component.path),
+    }
+    print(f"  $ {label}", flush=True)
+    actions = []
+    try:
+        proc = subprocess.Popen(
+            [sys.executable, str(component.path / argv[0]), *argv[1:]],
+            cwd=component.path, env=env, stdout=subprocess.PIPE, text=True,
+        )
+    except OSError as exc:
+        raise CommandError(f"`{label}`: {exc}") from exc
+    with proc:
+        for line in proc.stdout:
+            print(line, end="", flush=True)
+            if line.startswith(ACTION_PREFIX):
+                actions.append(line[len(ACTION_PREFIX):].strip())
+    if proc.returncode:
+        raise CommandError(f"`{label}` exited with {proc.returncode}")
+    return actions
 
 
 def tailnet_check(component: Component) -> tuple[str, str]:

@@ -88,6 +88,20 @@ class LoadTest(RepoCase):
         self.assertEqual(comp.setup[0].note, "hi")
         self.assert_invalid('description = "x"\n[[setup]]\nrun = "a"\nnote = 1\n', "note")
 
+    def test_script_step(self):
+        path = self.add("stacks/sc", 'description = "x"\n[[setup]]\nscript = "tool.py apply --all"\nonce = "data/.done"\n', env_example=None)
+        (path / "tool.py").write_text("")
+        step = components.load(path).setup[0]
+        self.assertEqual((step.run, step.script, step.once), (None, "tool.py apply --all", "data/.done"))
+
+    def test_rejects_bad_script_steps(self):
+        self.assert_invalid('description = "x"\n[[setup]]\nonce = "x"\n', "exactly one of 'run' or 'script'")
+        self.assert_invalid('description = "x"\n[[setup]]\nrun = "a"\nscript = "b.py"\n', "exactly one of 'run' or 'script'")
+        self.assert_invalid('description = "x"\n[[setup]]\nscript = ""\n', "setup.script")
+        self.assert_invalid('description = "x"\n[[setup]]\nscript = "missing.py"\n', "not found: missing.py")
+        self.assert_invalid('description = "x"\n[[setup]]\nscript = "../x.py"\n', "setup.script")
+        self.assert_invalid('description = "x"\n[[setup]]\nscript = "a.py"\ninteractive = true\n', "only apply to 'run'")
+
     def test_rejects_unknown_keys(self):
         self.assert_invalid('description = "x"\nport = 1\n', "unknown key.*port")
         self.assert_invalid('description = "x"\n[env]\nsecret = []\n', "unknown key.*secret")

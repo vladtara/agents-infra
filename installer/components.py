@@ -5,6 +5,7 @@ an optional .env.example and a component.toml describing how to install it.
 """
 
 import re
+import shlex
 import tomllib
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
@@ -15,7 +16,7 @@ from installer import envfile
 NAME_RE = re.compile(r"^[a-z0-9_-]+$")
 TOP_KEYS = {"description", "order", "dirs", "env", "setup", "tailscale"}
 ENV_KEYS = {"set", "generate", "ask"}
-STEP_KEYS = {"run", "once", "interactive", "headless", "note"}
+STEP_KEYS = {"run", "script", "once", "interactive", "headless", "note"}
 TAILSCALE_KEYS = {"service"}
 INFRA_DIRS = ("tailscale", "dockge")
 
@@ -30,15 +31,17 @@ class SelectionError(ValueError):
 
 @dataclass(frozen=True)
 class Step:
-    """A `docker compose` invocation run during install.
+    """A setup step run during install: `docker compose <run>` or `python3 <script>`.
 
+    script: a file in the component folder plus arguments.
     once: marker path; the step is skipped while it exists and the
     installer creates it after the step succeeds.
     headless: run string used instead of an interactive step under --yes.
     note: printed right before the step runs.
     """
 
-    run: str
+    run: str | None = None
+    script: str | None = None
     once: str | None = None
     interactive: bool = False
     headless: str | None = None
@@ -151,16 +154,27 @@ def load(path: Path) -> Component:
         env_set=dict(env_set),
         env_generate=tuple(generate),
         env_ask=tuple(ask),
-        setup=tuple(_step(raw, where) for raw in data.get("setup", [])),
+        setup=tuple(_step(raw, where, path) for raw in data.get("setup", [])),
         tailscale_service=service,
     )
 
 
-def _step(raw: dict, where: str) -> Step:
+def _step(raw: dict, where: str, path: Path) -> Step:
     _check_keys(raw, STEP_KEYS, f"{where} [[setup]]")
-    run, once, interactive = raw.get("run"), raw.get("once"), raw.get("interactive", False)
-    if not isinstance(run, str) or not run.strip():
-        raise ManifestError(f"{where}: every [[setup]] needs a 'run' string")
+    run, script = raw.get("run"), raw.get("script")
+    once, interactive = raw.get("once"), raw.get("interactive", False)
+    if (run is None) == (script is None):
+        raise ManifestError(f"{where}: every [[setup]] needs exactly one of 'run' or 'script'")
+    for key, value in (("run", run), ("script", script)):
+        if value is not None and (not isinstance(value, str) or not value.strip()):
+            raise ManifestError(f"{where}: 'setup.{key}' must be a non-empty string")
+    if script is not None:
+        if interactive or "headless" in raw:
+            raise ManifestError(f"{where}: 'setup.interactive' and 'setup.headless' only apply to 'run' steps")
+        target = shlex.split(script)[0]
+        _check_relative(target, "setup.script", where)
+        if not (path / target).is_file():
+            raise ManifestError(f"{where}: setup.script file not found: {target}")
     if once is not None:
         if not isinstance(once, str):
             raise ManifestError(f"{where}: 'setup.once' must be a path string")
@@ -176,7 +190,7 @@ def _step(raw: dict, where: str) -> Step:
     note = raw.get("note")
     if note is not None and not isinstance(note, str):
         raise ManifestError(f"{where}: 'setup.note' must be a string")
-    return Step(run=run, once=once, interactive=interactive, headless=headless, note=note)
+    return Step(run=run, script=script, once=once, interactive=interactive, headless=headless, note=note)
 
 
 def _check_keys(table, allowed: set[str], where: str) -> None:

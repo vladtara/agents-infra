@@ -55,6 +55,27 @@ interactive = true
 headless = "run -T --rm hl onboard --non-interactive"
 """
 
+SCRIPT_TOML = """\
+description = "Scripted"
+order = 50
+
+[[setup]]
+run = "run --rm sc chown"
+
+[[setup]]
+script = "tool.py apply {uid}"
+"""
+
+TOOL_PY = """\
+import os, sys
+from pathlib import Path
+print("args", sys.argv[1:])
+print("cwd", Path.cwd() == Path(os.environ["COMPONENT_DIR"]))
+print("repo", os.environ["REPO_DIR"], "stacks", os.environ["STACKS_DIR"])
+print("action: team tech: add the deploy key")
+sys.exit(int(os.environ.get("TOOL_EXIT", "0")))
+"""
+
 UP = ("up", "-d", "--wait", "--wait-timeout", "180")
 
 
@@ -86,6 +107,9 @@ class CliCase(unittest.TestCase):
 
     def compose_calls(self):
         return [call.args[1:] for call in self.compose.call_args_list if not call.kwargs.get("capture")]
+
+    def calls_for(self, path):
+        return [c.args[1:] for c in self.compose.call_args_list if c.args[0] == path and not c.kwargs.get("capture")]
 
     def add_component(self, rel, toml, env_example="API_KEY=\n"):
         path = self.repo / rel
@@ -292,9 +316,6 @@ class InstallTest(CliCase):
         self.assertEqual(code, 1)
         self.assertNotIn("TS_AUTHKEY", err)
 
-    def calls_for(self, path):
-        return [c.args[1:] for c in self.compose.call_args_list if c.args[0] == path and not c.kwargs.get("capture")]
-
     def test_yes_runs_headless_variant_of_interactive_step(self):
         hl = self.add_component("stacks/hl", HEADLESS_TOML)
         _, out, _ = self.main("--skip-host", "--yes", "hl")
@@ -310,6 +331,36 @@ class InstallTest(CliCase):
         calls = self.calls_for(hl)
         self.assertIn(("run", "--rm", "hl", "onboard"), calls)
         self.assertNotIn(("run", "-T", "--rm", "hl", "onboard", "--non-interactive"), calls)
+
+
+
+class ScriptStepTest(CliCase):
+    def setUp(self):
+        super().setUp()
+        self.sc = self.add_component("stacks/sc", SCRIPT_TOML, env_example="")
+        (self.sc / "tool.py").write_text(TOOL_PY)
+
+    def test_runs_script_in_component_folder_with_env(self):
+        code, out, _ = self.main("--skip-host", "sc")
+        self.assertEqual(code, 0)
+        self.assertIn(f"$ python3 tool.py apply {os.getuid()}", out)
+        self.assertIn(f"args ['apply', '{os.getuid()}']", out)
+        self.assertIn("cwd True", out)
+        self.assertIn(f"repo {self.repo} stacks {self.repo / 'stacks'}", out)
+        self.assertEqual(self.calls_for(self.sc), [("pull",), ("run", "--rm", "sc", "chown"), UP])
+
+    def test_action_lines_reach_action_needed(self):
+        _, out, _ = self.main("--skip-host", "sc")
+        action = out[out.index("Action needed"):]
+        self.assertIn("sc: team tech: add the deploy key", action)
+
+    def test_failing_script_fails_the_component(self):
+        with mock.patch.dict(os.environ, {"TOOL_EXIT": "3"}):
+            code, _, err = self.main("--skip-host", "sc")
+        self.assertEqual(code, 1)
+        self.assertIn("sc: `python3 tool.py apply", err)
+        self.assertIn("exited with 3", err)
+        self.assertNotIn(UP, self.calls_for(self.sc))
 
 
 if __name__ == "__main__":
