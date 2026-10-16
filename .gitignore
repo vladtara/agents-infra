@@ -224,4 +224,5 @@ tailscale/data/
 dockge/data/
 stacks/*/data/
 stacks/*/backups/
+stacks/openclaw/teams.toml
 .rune/

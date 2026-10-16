@@ -1,18 +1,23 @@
 description = "OpenClaw: personal AI assistant gateway on its own tailnet node"
 order = 20
-dirs = ["data/config", "data/config/logs", "data/workspace", "data/auth", "data/tailscale", "backups"]
+dirs = ["data/config", "data/config/logs", "data/config/agents.d", "data/workspace", "data/auth", "data/tailscale", "data/teams", "data/team-keys", "data/team-remotes", "backups"]
 
 [env]
 generate = ["OPENCLAW_GATEWAY_TOKEN"]
 ask = ["TS_AUTHKEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"]
 
-# Setup steps mirror upstream scripts/docker/setup.sh (v2026.9.8). No --no-deps:
+# Setup steps mirror upstream scripts/docker/setup.sh (v2026.10.3). No --no-deps:
 # one-off containers join the tailscale sidecar's namespace, so it must be running.
 
 # The image runs as uid 1000 ("node"). Fix ownership from a short-lived root
 # container, leaving user files inside the workspace untouched.
 [[setup]]
 run = '''run --rm --user root --entrypoint sh openclaw-gateway -c 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; export PATH; /usr/bin/find -P /home/node/.openclaw -xdev \( ! -path /home/node/.openclaw/workspace -o -prune \) -execdir /usr/bin/chown -h node:node {} +; /usr/bin/chown -h node:node /home/node/.config /home/node/backups; /usr/bin/find -P /home/node/.config/openclaw -xdev -execdir /usr/bin/chown -h node:node {} +; if [ -d /home/node/.openclaw/workspace/.openclaw ] && [ ! -L /home/node/.openclaw/workspace/.openclaw ]; then /usr/bin/find -P /home/node/.openclaw/workspace/.openclaw -xdev -execdir /usr/bin/chown -h node:node {} +; fi || true' '''
+
+# Team folders are written by uid 1000 from the team-git container (teams.py).
+# Only the mount points: clones and keys inside keep their owners.
+[[setup]]
+run = "run --rm --user root --entrypoint chown team-git node:node /teams /keys /remotes"
 
 # Onboarding stores API keys as env references (--secret-input-mode ref), so
 # they live only in .env. With --yes the headless variant picks the provider
@@ -28,8 +33,15 @@ headless = '''run -T --rm --entrypoint sh openclaw-gateway -c 'if [ -n "$ANTHROP
 # loopback-bound gateway from 127.0.0.1 with forwarded headers, hence
 # trustedProxies. Managed Tailscale stays off: the sidecar owns Serve and the
 # image has no tailscale CLI. Logs go to the mounted state dir instead of /tmp.
+# Session visibility "tree": an agent sees its own sessions and the subagents
+# it spawned, not other teams' sessions.
 [[setup]]
-run = '''run --rm --entrypoint node openclaw-gateway dist/index.js config set --batch-json '[{"path":"gateway.mode","value":"local"},{"path":"gateway.bind","value":"loopback"},{"path":"gateway.trustedProxies","value":["127.0.0.1"]},{"path":"gateway.tailscale.mode","value":"off"},{"path":"gateway.auth.rateLimit","value":{"maxAttempts":10,"windowMs":60000,"lockoutMs":300000}},{"path":"logging.file","value":"/home/node/.openclaw/logs/openclaw.log"}]' '''
+run = '''run --rm --entrypoint node openclaw-gateway dist/index.js config set --batch-json '[{"path":"gateway.mode","value":"local"},{"path":"gateway.bind","value":"loopback"},{"path":"gateway.trustedProxies","value":["127.0.0.1"]},{"path":"gateway.tailscale.mode","value":"off"},{"path":"gateway.auth.rateLimit","value":{"maxAttempts":10,"windowMs":60000,"lockoutMs":300000}},{"path":"logging.file","value":"/home/node/.openclaw/logs/openclaw.log"},{"path":"tools.sessions.visibility","value":"tree"}]' '''
+
+# Clone teams listed in teams.toml that are missing and refresh their agents
+# (TEAMS.md). Problems, such as a deploy key to add, go to Action needed.
+[[setup]]
+script = "teams.py apply"
 
 [tailscale]
 service = "tailscale"

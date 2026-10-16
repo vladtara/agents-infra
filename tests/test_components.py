@@ -194,11 +194,12 @@ class RepoManifestTest(unittest.TestCase):
         self.assertEqual(openclaw.env_ask, ("TS_AUTHKEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"))
         self.assertIn("backups", openclaw.dirs)
         self.assertIn("data/config/logs", openclaw.dirs)
-        config_step = openclaw.setup[-1].run
+        config_step = next(step.run for step in openclaw.setup if step.run and "config set --batch-json" in step.run)
         for pinned in ('"gateway.bind","value":"loopback"', '"gateway.trustedProxies","value":["127.0.0.1"]',
-                       '"logging.file","value":"/home/node/.openclaw/logs/openclaw.log"'):
+                       '"logging.file","value":"/home/node/.openclaw/logs/openclaw.log"',
+                       '"tools.sessions.visibility","value":"tree"'):
             self.assertIn(pinned, config_step)
-        self.assertNotIn("--no-deps", " ".join(step.run for step in openclaw.setup))
+        self.assertNotIn("--no-deps", " ".join(step.run for step in openclaw.setup if step.run))
 
     def test_openclaw_onboarding_keeps_keys_in_env_and_has_headless_variant(self):
         openclaw = {c.name: c for c in components.discover(REPO)}["openclaw"]
@@ -206,7 +207,7 @@ class RepoManifestTest(unittest.TestCase):
         self.assertIn("--secret-input-mode ref", onboard.run)
         self.assertIn("--non-interactive --accept-risk", onboard.headless)
         self.assertIn("--secret-input-mode ref", onboard.headless)
-        self.assertIn('"gateway.tailscale.mode","value":"off"', openclaw.setup[-1].run)
+        self.assertIn('"gateway.tailscale.mode","value":"off"', " ".join(step.run for step in openclaw.setup if step.run))
         self.assertIn("--secret-input-mode ref", (REPO / "stacks/openclaw/openclaw.rune").read_text())
         self.assertIn("Gateway not detected yet", onboard.note)
 
@@ -220,6 +221,17 @@ class RepoManifestTest(unittest.TestCase):
         self.assertNotIn("env_file", team_git)
         self.assertNotIn("network_mode", team_git)
         self.assertIn("OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:2026.10.3", (REPO / "stacks/openclaw/.env.example").read_text())
+
+    def test_openclaw_manifest_sets_up_teams(self):
+        openclaw = {c.name: c for c in components.discover(REPO)}["openclaw"]
+        for folder in ("data/teams", "data/team-keys", "data/team-remotes", "data/config/agents.d"):
+            self.assertIn(folder, openclaw.dirs)
+        self.assertEqual(openclaw.setup[-1].script, "teams.py apply")
+        self.assertIn("run --rm --user root --entrypoint chown team-git node:node /teams /keys /remotes",
+                      [step.run for step in openclaw.setup])
+        rune = (REPO / "stacks/openclaw/openclaw.rune").read_text()
+        for task in ("team-add team source:", "team-sync *team:", "teams:", "team-remove team:"):
+            self.assertIn(task, rune)
 
 if __name__ == "__main__":
     unittest.main()

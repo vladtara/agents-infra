@@ -112,3 +112,24 @@ backup:
 [working-directory("stacks/openclaw")]
 url:
     @docker compose exec -T tailscale tailscale status --json 2>/dev/null | python3 -c 'import json, sys; s = json.loads(sys.stdin.read() or "{}"); d = s.get("CertDomains") or []; print("https://" + d[0] + "/" if d else "HTTPS certificates are off: enable them at https://login.tailscale.com/admin/dns" if s.get("BackendState") == "Running" else "node not running or not logged in: rune openclaw::up, then check TS_AUTHKEY in stacks/openclaw/.env")'
+
+# Add a team from an SSH git URL or a local folder, e.g. `rune openclaw::team-add tech examples/teams/tech`.
+[group("openclaw")]
+team-add team source:
+    python3 stacks/openclaw/teams.py add {{team}} {{source}}
+
+# Two-way git sync of one team, or of all teams.
+[group("openclaw")]
+team-sync *team:
+    python3 stacks/openclaw/teams.py sync {{team}}
+
+# List teams, their agents and git state.
+[group("openclaw")]
+teams:
+    python3 stacks/openclaw/teams.py list
+
+# Remove a team's agents and clone from this VM; its git repo is untouched.
+[group("openclaw")]
+[confirm("Remove this team's agents and clone from this VM?")]
+team-remove team:
+    python3 stacks/openclaw/teams.py remove {{team}}

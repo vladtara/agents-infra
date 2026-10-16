@@ -1,0 +1,11 @@
+# Teams this VM runs. Copy to teams.toml, or let `rune openclaw::team-add` create it.
+# teams.toml is ignored by git; see TEAMS.md.
+
+[git]
+name = "OpenClaw agents-vm"     # author of sync commits
+email = "openclaw@agents-vm"
+vm = "agents-vm"                # in commit messages and rescue branch names; default: hostname
+
+[teams.tech]
+url = "git@github.com:org/openclaw-tech.git"   # SSH URL, or a local folder such as examples/teams/tech
+branch = "main"
