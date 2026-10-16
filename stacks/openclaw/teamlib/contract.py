@@ -44,7 +44,7 @@ def plugin_specs(value) -> list[str] | None:
     if not isinstance(value, dict) or set(value) - {"plugins"}:
         return None
     specs = value.get("plugins", [])
-    if not isinstance(specs, list) or not all(isinstance(s, str) and s.strip() for s in specs):
+    if not isinstance(specs, list) or not all(isinstance(s, str) and s.strip() and not s.startswith("-") for s in specs):
         return None
     return list(specs)
 

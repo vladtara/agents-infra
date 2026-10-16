@@ -49,20 +49,30 @@ class Sync:
         return entries
 
     def stage_workspaces(self, secrets: list[str]) -> None:
-        """Stage changes under workspaces/, leaving out secrets, big files and nested repos."""
+        """Stage changes under workspaces/, leaving out secrets, big files, nested repos and non-agent folders."""
         nested = {p.parent.name for p in (self.clone / "workspaces").glob("*/.git")}
         for folder in sorted(nested):
             self.say(f"  warning: workspaces/{folder} holds its own .git; it is not synced until you remove it")
-        paths = []
+        listing = self.git("ls-tree", "-z", "--name-only", "HEAD", "workspaces/").stdout
+        agents = {path.split("/")[1] for path in listing.split("\0") if path}
+        paths, strays = [], set()
         for _, path in self.status("workspaces"):
             parts = path.split("/")
             if len(parts) > 1 and parts[1] in nested:
+                continue
+            if len(parts) < 3 or parts[1] not in agents:
+                strays.add(f"workspaces/{parts[1]}/" if len(parts) > 2 else path)
                 continue
             reason = scan.problem(self.clone / path, secrets)
             if reason:
                 self.say(f"  not committed: {path} ({reason})")
                 continue
             paths.append(path)
+        for stray in sorted(strays):
+            self.say(
+                f"  not committed: {stray} is not an agent folder in git "
+                "(new agents are added in git: workspaces/<id>/ with SOUL.md and AGENTS.md)"
+            )
         if paths:
             self.git("add", "--all", "--pathspec-from-file=-", "--pathspec-file-nul", input=nul(paths))
 
@@ -72,8 +82,11 @@ class Sync:
         self.git("commit", "-q", "--no-verify", "-m", f"sync: {self.vm} {when:%Y-%m-%d %H:%M}")
         return True
 
-    def rescue_settings(self, stamp: str) -> str | None:
-        """Move edits made on the VM outside workspaces/ to a rescue branch and reset them to git."""
+    def rescue_settings(self, stamp: str, secrets: list[str]) -> str | None:
+        """Move edits made on the VM outside workspaces/ to a rescue branch and reset them to git.
+
+        The branch is pushed unless a rescued file holds a secret; then it stays on this VM.
+        """
         changed = self.status(".", ":(exclude)workspaces/")
         if not changed:
             return None
@@ -82,7 +95,8 @@ class Sync:
         tree = self.git("write-tree").stdout.strip()
         commit = self.git("commit-tree", tree, "-p", "HEAD", "-m", f"rescue: settings edited on {self.vm}").stdout.strip()
         branch = f"rescue/{self.vm}/{stamp}-settings"
-        pushed = self._save(branch, commit)
+        blocked = [f"{path}: {reason}" for path in paths if (reason := scan.problem(self.clone / path, secrets))]
+        pushed = self._save(branch, commit, push=not blocked)
         self.git("reset", "-q")
         tracked = [path for xy, path in changed if xy != "??"]
         untracked = [path for xy, path in changed if xy == "??"]
@@ -90,7 +104,10 @@ class Sync:
             self.git("checkout", "HEAD", "--pathspec-from-file=-", "--pathspec-file-nul", input=nul(tracked))
         if untracked:
             self.git("clean", "-fq", "--", *untracked)
-        where = branch if pushed else f"{branch} (local only: push failed)"
+        if blocked:
+            where = f"{branch} (kept on this VM, not pushed because {'; '.join(blocked)})"
+        else:
+            where = branch if pushed else f"{branch} (local only: push failed)"
         self.say(f"  settings edited on this VM were saved to {where} and reset to git: {', '.join(sorted(paths))}")
         return branch
 
@@ -177,9 +194,9 @@ class Sync:
         ahead, _ = self.ahead_behind()
         return pending + ([f"{ahead} unpushed commit(s)"] if ahead else [])
 
-    def _save(self, branch: str, rev: str) -> bool:
+    def _save(self, branch: str, rev: str, push: bool = True) -> bool:
         self.git("branch", "-f", branch, rev)
-        return self.git("push", "-q", "origin", f"{rev}:refs/heads/{branch}", check=False).returncode == 0
+        return push and self.git("push", "-q", "origin", f"{rev}:refs/heads/{branch}", check=False).returncode == 0
 
     def _settle_autostash(self) -> None:
         """Uncommitted local edits that clash with git stay in `git stash`; git's version goes live."""

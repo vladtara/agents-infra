@@ -51,6 +51,9 @@ def load(path: Path) -> Registry:
     for name, raw in data.get("teams", {}).items():
         if not NAME_RE.match(name):
             raise TeamError(f"{path}: team name {name!r} must match {NAME_RE.pattern}")
+        for other in registry.teams:
+            if _overlap(name, other):
+                raise TeamError(f"{path}: teams {other!r} and {name!r} overlap: their agent ids would be ambiguous; rename one")
         if not isinstance(raw, dict) or not isinstance(raw.get("url"), str) or not raw["url"]:
             raise TeamError(f"{path}: [teams.{name}] needs a url")
         branch = raw.get("branch", "main")
@@ -76,13 +79,17 @@ def check_new_name(name: str, existing: Iterable[str]) -> None:
     for other in existing:
         if other == name:
             raise TeamError(f"team {name} is already in teams.toml")
-        if name.startswith(other + "-") or other.startswith(name + "-"):
+        if _overlap(name, other):
             raise TeamError(f"team name {name!r} overlaps team {other!r}: their agent ids would be ambiguous")
 
 
 def check_branch(branch: str) -> None:
     if not BRANCH_RE.match(branch):
         raise TeamError(f"branch {branch!r} must match {BRANCH_RE.pattern}")
+
+
+def _overlap(name: str, other: str) -> bool:
+    return name.startswith(other + "-") or other.startswith(name + "-")
 
 
 def _quote(value: str) -> str:

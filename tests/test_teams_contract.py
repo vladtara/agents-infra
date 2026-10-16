@@ -83,6 +83,7 @@ class ResolveTest(unittest.TestCase):
         self.assert_problem(tree(texts={"team.json5": '{"workspace": "/x", "default": true}'}), "must not set workspace, default")
         self.assert_problem(tree(texts={"team.json5": "{}", "agents/ghost.json5": "{}"}), "no matching workspaces/ghost/")
         self.assert_problem(tree(texts={"team.json5": "{}", "plugins.json": '["x"]'}), "plugins.json: expected")
+        self.assert_problem(tree(texts={"team.json5": "{}", "plugins.json": '{"plugins": ["--force"]}'}), "plugins.json: expected")
 
     def test_lists_every_problem_at_once(self):
         with self.assertRaises(TeamError) as caught:

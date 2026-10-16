@@ -121,6 +121,29 @@ class MainTest(StackCase):
             self.assertEqual(self.main("sync", "nope")[0], 1)
         self.assertIn("error: unknown team nope", err.getvalue())
 
+    def old_image(self):
+        (self.paths.stack / ".env").write_text("OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:2026.9.8\n")
+
+    def test_old_openclaw_image_is_refused(self):
+        self.old_image()
+        with mock.patch("sys.stderr", new_callable=io.StringIO) as err:
+            self.assertEqual(self.main("add", "tech", str(EXAMPLE))[0], 1)
+        self.assertIn("teams need OpenClaw 2026.10.3 or later", err.getvalue())
+        self.assertFalse(self.paths.clone("tech").exists())
+
+    def test_old_openclaw_image_on_install_is_an_action(self):
+        self.old_image()
+        self.paths.registry.write_text('[teams.tech]\nurl = "examples/teams/tech"\n')
+        code, out = self.main("apply")
+        self.assertEqual(code, 0)
+        self.assertIn("action: teams need OpenClaw 2026.10.3 or later", out)
+        self.assertFalse(self.paths.clone("tech").exists())
+
+    def test_newer_and_unversioned_images_pass(self):
+        for image in ("ghcr.io/openclaw/openclaw:2026.10.3-browser", "ghcr.io/openclaw/openclaw:2026.11.0", "ghcr.io/openclaw/openclaw:main"):
+            (self.paths.stack / ".env").write_text(f"OPENCLAW_IMAGE={image}\n")
+            self.assertIsNone(teams.image_problem(self.paths.stack), image)
+
     def test_apply_without_teams_does_nothing(self):
         self.assertEqual(self.main("apply"), (0, ""))
         self.assertEqual(self.runner.openclaw_calls, [])

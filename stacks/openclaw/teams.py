@@ -1,6 +1,7 @@
 """Manage git-backed OpenClaw teams: add, sync, remove, list, apply. See TEAMS.md."""
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -8,9 +9,26 @@ STACK = Path(__file__).resolve().parent
 REPO = STACK.parent.parent
 sys.path[:0] = [str(STACK), str(REPO)]
 
+from installer import envfile
 from teamlib import TeamError, commands, registry, scan
 from teamlib.context import Context, Paths
 from teamlib.runner import DockerRunner
+
+MIN_OPENCLAW = (2026, 10, 3)
+IMAGE_VERSION_RE = re.compile(r":(\d+)\.(\d+)\.(\d+)")
+
+
+def image_problem(stack: Path) -> str | None:
+    """Why the OPENCLAW_IMAGE in stack/.env is too old for teams, or None (tags without a version pass)."""
+    env_path = stack / ".env"
+    image = envfile.parse(env_path.read_text()).get("OPENCLAW_IMAGE", "") if env_path.is_file() else ""
+    match = IMAGE_VERSION_RE.search(image)
+    if match and tuple(int(part) for part in match.groups()) < MIN_OPENCLAW:
+        return (
+            f"teams need OpenClaw 2026.10.3 or later, but {image} is set: put "
+            "OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:2026.10.3 in stacks/openclaw/.env and run rune openclaw::update"
+        )
+    return None
 
 
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
@@ -41,6 +59,12 @@ def main(argv: list[str] | None = None, *, runner=None, stack: Path = STACK, rep
             secrets=scan.load_secrets(stack),
             out=out or sys.stdout,
         )
+        problem = image_problem(stack)
+        if problem and args.command in ("add", "sync", "remove"):
+            raise TeamError(problem)
+        if problem and args.command == "apply" and ctx.registry.teams:
+            ctx.say(f"action: {problem}")
+            return 0
         if args.command == "add":
             problems = commands.add(ctx, args.team, args.source, args.branch)
             for problem in problems:

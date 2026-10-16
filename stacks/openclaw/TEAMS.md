@@ -1,6 +1,6 @@
 # OpenClaw teams
 
-A team is a group of OpenClaw agents whose personas, memory and settings live in one private git repo. Every team runs in this stack's single gateway, next to the default `main` agent. `teams.py` clones team repos, turns them into agents, and syncs them with git when you run `rune openclaw::team-sync`.
+A team is a group of OpenClaw agents whose personas, memory and settings live in one private git repo. Every team runs in this stack's single gateway, next to the default `main` agent. `teams.py` clones team repos, turns them into agents, and syncs them with git when you run `rune openclaw::team-sync`. Teams need OpenClaw 2026.10.3 or later (`OPENCLAW_IMAGE` in `stacks/openclaw/.env`); `teams.py` refuses older images.
 
 ## Try it
 
@@ -62,9 +62,9 @@ Rules:
 
 `team-sync` runs these steps per team. Git runs in the `team-git` container, which holds the deploy key; the gateway never does.
 
-1. Stage the changes the agents made under `workspaces/`. Files holding a secret (a value from `.env`, or something shaped like an API key or private key) and files over 5 MB are left out and listed.
+1. Stage the changes the agents made under `workspaces/`. Files holding a secret (a value from `.env`, or something shaped like an API key or private key) and files over 5 MB are left out and listed. Only agent folders that exist in git are synced; anything else created under `workspaces/` stays on the VM and is listed.
 2. Commit them as `sync: <vm> <date time>`.
-3. Edits made on the VM outside `workspaces/` (settings, plugins.json) are saved to the branch `rescue/<vm>/<time>-settings` and reset to git. Settings change through git only.
+3. Edits made on the VM outside `workspaces/` (settings, plugins.json) are saved to the branch `rescue/<vm>/<time>-settings` and reset to git. If one of those files holds a secret, the branch is kept on this VM and not pushed. Settings change through git only.
 4. Fetch. When git has new commits, check them first: the contract above, then `openclaw config validate`. If they fail, sync stops and nothing goes live; the gateway keeps the last good settings.
 5. Rebase this VM's commits onto git's (see Conflicts).
 6. Push; when someone pushed in between, fetch and rebase again, up to three times.
@@ -82,12 +82,13 @@ Offline, sync keeps the local commit and stops that team; `team-sync` without a 
 | A file left out in step 1 also changed in git | Git's version goes live; the VM's edit stays in `git stash` in `data/teams/<team>` |
 | Settings edited in the Control UI | Saved to the agent's `agents.d` file, then overwritten by the next sync |
 | A workspace with its own `.git` | Reported and skipped until you delete that `.git` |
+| A folder under `workspaces/` that is not an agent in git | Reported and left on the VM; add agents through git |
 
 To look at a rescue branch: `git fetch` in your own clone, then `git log -p origin/rescue/<vm>/<time>`.
 
 ## Plugins
 
-`plugins.json` names plugins the team needs. Plugins are gateway-wide: every agent of every team can use them. `teams.py` installs a missing plugin only when OpenClaw installs it without asking. Anything OpenClaw wants confirmed (a source outside ClawHub, extra capabilities) is reported with the command for a person to run after reviewing it, for example `rune openclaw::cli plugins install <spec>`. Plugins are never uninstalled automatically; `rune openclaw::teams` lists installed plugins no team names.
+`plugins.json` names plugins the team needs, by package name or ClawHub id (an entry starting with `-` is rejected). Plugins are gateway-wide: every agent of every team can use them. `teams.py` installs a missing plugin only when OpenClaw installs it without asking. Anything OpenClaw wants confirmed (a source outside ClawHub, extra capabilities) is reported with the command for a person to run after reviewing it, for example `rune openclaw::cli plugins install <spec>`. Plugins are never uninstalled automatically; `rune openclaw::teams` lists installed plugins no team names.
 
 ## A new VM
 

@@ -101,6 +101,26 @@ class SyncTest(SyncCase):
         self.assertIn("edited on vm", self.upstream("show", f"{branch}:team.json5"))
         self.assertIn("reset to git: notes.txt, team.json5", self.output())
 
+    def test_secret_in_settings_edit_is_not_pushed(self):
+        self.vm_write("team.json5", f'{{"description": "{KEY}"}}\n')
+        self.assertTrue(self.sync(), self.output())
+        self.assertEqual(self.upstream("branch", "--list", "rescue/*"), "")
+        local = run_git(self.clone, "branch", "--list", "rescue/*").stdout.strip()
+        self.assertTrue(local.endswith("-settings"), local)
+        self.assertIn(KEY, run_git(self.clone, "show", f"{local}:team.json5").stdout)
+        self.assertIn("not pushed because team.json5: looks like it contains a key or token", self.output())
+        self.assertNotIn(KEY, (self.clone / "team.json5").read_text())
+
+    def test_folder_that_is_not_an_agent_stays_local(self):
+        self.vm_write("workspaces/scratch/notes.md", "scratch\n")
+        self.vm_write("workspaces/coordinator/memory/a.md", "a\n")
+        self.assertTrue(self.sync(), self.output())
+        files = self.upstream("ls-tree", "-r", "--name-only", "main")
+        self.assertIn("workspaces/coordinator/memory/a.md", files)
+        self.assertNotIn("workspaces/scratch", files)
+        self.assertIn("not committed: workspaces/scratch/ is not an agent folder in git", self.output())
+        self.assertTrue(self.sync(), self.output())
+
     def test_secret_files_stay_local(self):
         self.ctx.secrets = ["gateway-token-123"]
         self.vm_write("workspaces/coordinator/memory/leak.md", f"key {KEY}\n")

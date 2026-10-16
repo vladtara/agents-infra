@@ -81,7 +81,7 @@ def sync_team(ctx, team: Team) -> list[str]:
     stamp = when.strftime("%Y%m%d-%H%M%S")
     state.stage_workspaces(ctx.secrets)
     state.commit(when)
-    state.rescue_settings(stamp)
+    state.rescue_settings(stamp, ctx.secrets)
     state.integrate(lambda tree: gateway.check_team(ctx, team.name, tree), stamp)
     return gateway.apply_team(ctx, team.name, from_rev(state.git, "HEAD"))
 

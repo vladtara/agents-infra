@@ -41,6 +41,11 @@ class RegistryTest(unittest.TestCase):
             with self.subTest(text=text), self.assertRaisesRegex(TeamError, message):
                 registry.load(self.path)
 
+    def test_rejects_overlapping_teams_in_file(self):
+        self.path.write_text('[teams.tech]\nurl = "a"\n\n[teams.tech-ops]\nurl = "b"\n')
+        with self.assertRaisesRegex(TeamError, "teams 'tech' and 'tech-ops' overlap"):
+            registry.load(self.path)
+
     def test_new_team_names(self):
         registry.check_new_name("fin", ["tech"])
         for name, existing, message in (
