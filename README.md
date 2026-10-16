@@ -90,6 +90,7 @@ rune dockge::up | down | logs | update
 rune openclaw::up | down | restart | logs | update
 rune openclaw::shell | tui | status | doctor | configure | onboard | backup | url
 rune openclaw::cli channels list
+rune openclaw::team-add <team> <source> | team-sync [team] | teams | team-remove <team>
 ```
 
 Without rune, use `docker compose` inside a component folder; the project name is the folder name, the same one Dockge uses.
@@ -104,6 +105,7 @@ tailscale/         the VM's tailnet node, outside stacks/ so Dockge cannot stop 
 dockge/            Dockge itself, outside stacks/ so it never manages itself
 stacks/            DOCKGE_STACKS_DIR: one folder per tool
   openclaw/
+examples/teams/    example OpenClaw team repo (stacks/openclaw/TEAMS.md)
 tests/             python3 -m unittest discover -s tests
 .docs/             design specs and implementation plans
 ```
@@ -140,11 +142,14 @@ Each component folder holds:
    interactive = false             # true: skipped with --yes, unless headless is set
    # headless = "run -T --rm app migrate --yes"  # with interactive = true: used instead under --yes
 
+   [[setup]]                       # or `python3 <script>` in the component folder
+   script = "tool.py apply"        # stdout lines "action: ..." go to Action needed; non-zero exit fails
+
    [tailscale]                     # optional: print the URL of this stack's Tailscale sidecar
    service = "tailscale"
    ```
 
-   Placeholders in `set` and `run`: `{repo_dir}`, `{stacks_dir}`, `{uid}`, `{gid}`. Every key named in `[env]` must exist in `.env.example`. If a setup step ran while the stack was already running, `init.py` restarts it (except the sidecar).
+   Placeholders in `set`, `run` and `script`: `{repo_dir}`, `{stacks_dir}`, `{uid}`, `{gid}`. Every key named in `[env]` must exist in `.env.example`. If a setup step ran while the stack was already running, `init.py` restarts it (except the sidecar).
 3. To give the tool its own tailnet name, copy the `tailscale` service and the `tailscale/serve.json` folder from `stacks/openclaw/`, point `Proxy` at the app's port, set `network_mode: service:tailscale` on the app, add `TS_IMAGE`, `TS_AUTHKEY`, `TS_HOSTNAME` to `.env.example` and `TS_AUTHKEY` to `[env] ask`. If the app loads `.env` with `env_file`, set `TS_AUTHKEY: ""` in its `environment:`.
 4. Optionally add `stacks/<name>/<name>.rune` (use `[working-directory("stacks/<name>")]` on each task) and a `mod <name> "stacks/<name>/<name>.rune"` line in `Runefile`.
 5. `rune validate && python3 init.py <name>`
@@ -156,5 +161,6 @@ Stacks created from the Dockge UI work too. They have no `component.toml`, so `i
 - Dockge mounts the Docker socket, which is root-equivalent on the host. It listens on loopback only and is reachable through the tailnet. Its web console is enabled (`DOCKGE_ENABLE_CONSOLE: true` in `dockge/compose.yaml`), so anyone who can log in to Dockge gets a shell with Docker socket access, which means root on the VM. Use a strong Dockge password and limit who can reach `agents-vm` port 443 with a tailnet ACL, or set it to `false` and run `rune dockge::up` to turn the console off.
 - The Tailscale containers have `NET_ADMIN` and `/dev/net/tun`; the VM node shares the host network. Treat `tailscale/data/` and `stacks/*/data/tailscale/` as credentials (node keys).
 - OpenClaw's sandbox (agents in sibling containers) is off. Enabling it needs the Docker socket; see the comments in `stacks/openclaw/compose.yaml`.
+- OpenClaw teams share one gateway, which is one trust boundary: teams are organized apart, not isolated, and anyone who can push to a team repo changes that team's agents. Team deploy keys in `stacks/openclaw/data/team-keys/` are credentials. See `stacks/openclaw/TEAMS.md`.
 - OpenClaw keeps OAuth tokens in plain SQLite under `stacks/openclaw/data/`. Treat that folder and `stacks/openclaw/backups/` as credentials.
 - Dockge 1.5.0 (`louislam/dockge:1`) ignores `PUID`/`PGID`, so stacks *created* in the UI are owned by root until a release ships that support. Editing existing files keeps their owner. `DOCKGE_IMAGE=louislam/dockge:nightly` in `dockge/.env` has it today.

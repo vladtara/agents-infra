@@ -1,6 +1,6 @@
 # OpenClaw
 
-[OpenClaw](https://github.com/openclaw/openclaw) personal AI assistant gateway, pinned to `ghcr.io/openclaw/openclaw:2026.9.8`, on its own tailnet node.
+[OpenClaw](https://github.com/openclaw/openclaw) personal AI assistant gateway, pinned to `ghcr.io/openclaw/openclaw:2026.10.3`, on its own tailnet node. Groups of agents can be added as git-managed teams ([TEAMS.md](TEAMS.md)).
 
 ## How it runs
 
@@ -35,6 +35,9 @@ Everything is under `stacks/openclaw/`, ignored by git, owned by uid 1000.
 | `data/auth/` | `~/.config/openclaw` | Key for legacy encrypted OAuth credentials |
 | `data/tailscale/` | sidecar `/var/lib/tailscale` | Tailnet node identity |
 | `backups/` | `/home/node/backups` | `rune openclaw::backup` archives |
+| `data/teams/` | `/home/node/teams` | Team repo clones; team agents work in their `workspaces/` ([TEAMS.md](TEAMS.md)) |
+| `data/config/agents.d/` | `~/.openclaw/agents.d` | Generated team agent entries |
+| `data/team-keys/`, `data/team-remotes/` | `team-git` only | Team deploy keys; bare repos made from local folders |
 
 Treat `data/config`, `data/auth` and `backups/` as credentials: OAuth tokens are stored as plain text in SQLite. Never copy the live `*.sqlite` files; use `rune openclaw::backup` or stop the stack first. The workspace is a good candidate for its own private git repo.
 
@@ -44,6 +47,10 @@ Treat `data/config`, `data/auth` and `backups/` as credentials: OAuth tokens are
 - The search index (full text plus vectors) lives in the per-agent SQLite database and reindexes when the files change.
 - Vector search needs an embeddings provider. The default is OpenAI (`OPENAI_API_KEY`); with only an Anthropic key you get keyword search. Settings live under `memory.search` (`provider`, `model`, `sources`); this repo does not pin them.
 - Commands: `rune openclaw::cli memory status`, `rune openclaw::cli memory search "query"`, `rune openclaw::cli memory index --force`, `rune openclaw::cli memory reset`. Never delete the SQLite files to reset memory.
+
+## Teams
+
+Groups of agents with their own personas, memory and settings, each kept in a private git repo and synced by hand: `rune openclaw::team-add <team> <source>`, `team-sync [team]`, `teams`, `team-remove <team>`. Start from the example in `examples/teams/tech/`; the repo structure, sync rules and conflict handling are in [TEAMS.md](TEAMS.md).
 
 ## Plugins and skills
 
@@ -103,13 +110,13 @@ With `logging.file` set, logs rotate at 100 MB and keep five archives (about 600
 
 `rune openclaw::update` writes a verified backup, pulls the tags in `.env`, recreates the stack and runs `doctor --json`. On start the image migrates config and state itself (`doctor --fix`) and keeps `*.pre-startup-migration-*.bak` files; keep them with the backup, because a rollback needs the old image and the matching state.
 
-Plain version tags such as `2026.9.8` never change, so they get no OS security refreshes. Bump `OPENCLAW_IMAGE` to a newer release (or a dated `-rYYYYMMDD` tag when one exists) and run `rune openclaw::update`.
+Plain version tags such as `2026.10.3` never change, so they get no OS security refreshes. Bump `OPENCLAW_IMAGE` to a newer release (or a dated `-rYYYYMMDD` tag when one exists) and run `rune openclaw::update`.
 
-A later OpenClaw release (already on upstream `main`) needs `pid: "service:openclaw-gateway"` on the `openclaw-cli` service; without it `tui`, `status` and `backup` refuse to run. Add it when you upgrade past 2026.9.8.
+`openclaw-cli` shares the gateway's PID namespace (`pid: "service:openclaw-gateway"`); since 2026.10.1, `tui`, `status` and `backup` refuse to run without it.
 
 ## Optional features
 
-- **Browser control** (`openclaw browser`, the Control UI browser panel): Chromium must be inside the gateway image. Set `OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:2026.9.8-browser` and run `rune openclaw::update`. Do not install Chromium at runtime; it does not survive recreation.
+- **Browser control** (`openclaw browser`, the Control UI browser panel): Chromium must be inside the gateway image. Set `OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:2026.10.3-browser` and run `rune openclaw::update`. Do not install Chromium at runtime; it does not survive recreation.
 - **Sandbox** (agent tools in separate containers): needs a custom image with the Docker CLI, the sandbox image and the Docker socket; see the comment in `compose.yaml`.
 - **Gmail webhooks** (`openclaw webhooks gmail`): Pub/Sub needs a public HTTPS endpoint (Tailscale Funnel on its own port in `tailscale/serve.json`, routed only to the watcher on `127.0.0.1:8788`), a custom image with `gog`, and a working sandbox. Plain `/hooks` endpoints already work for callers on the tailnet with a dedicated hook token.
 
