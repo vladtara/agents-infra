@@ -229,6 +229,15 @@ class SyncTest(SyncCase):
         self.assertEqual(self.vm_git("tech", "diff", "--name-only", "--diff-filter=U").stdout, "")
         self.assertTrue(self.sync(), self.output())
 
+    def test_skipped_new_file_also_added_in_git(self):
+        self.vm_write("workspaces/reviewer/memory/new.md", f"key {KEY}\n")
+        self.person_push({"workspaces/reviewer/memory/new.md": "from the person\n"})
+        self.assertTrue(self.sync(), self.output())
+        self.assertEqual((self.clone / "workspaces/reviewer/memory/new.md").read_text(), "from the person\n")
+        self.assertIn(KEY, self.vm_git("tech", "stash", "show", "-p", "--include-untracked").stdout)
+        self.assertIn("also added in git", self.output())
+        self.assertTrue(self.sync(), self.output())
+
     def test_nested_git_folder_is_skipped(self):
         run_git(self.clone / "workspaces/reviewer", "init", "-q")
         self.vm_write("workspaces/reviewer/memory/x.md", "x\n")

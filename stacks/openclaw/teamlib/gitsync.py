@@ -150,6 +150,7 @@ class Sync:
 
     def rebase(self, stamp: str) -> None:
         """Rebase onto upstream. On conflict, save local commits to a rescue branch and let upstream win."""
+        self._stash_colliding_untracked()
         first = self.git("rebase", "-q", self.upstream, check=False)
         if first.returncode == 0:
             self._settle_autostash()
@@ -259,6 +260,21 @@ class Sync:
     def _save(self, branch: str, rev: str, push: bool = True) -> bool:
         self.git("branch", "-f", branch, rev)
         return push and self.git("push", "-q", "origin", f"{rev}:refs/heads/{branch}", check=False).returncode == 0
+
+    def _stash_colliding_untracked(self) -> None:
+        """Untracked files git also added would block the rebase (autostash skips them): keep this VM's copies in the stash."""
+        untracked = [path for xy, path in self.status("workspaces") if xy == "??"]
+        if not untracked:
+            return
+        listing = self.git("ls-tree", "-r", "-z", "--name-only", self.upstream, "--", *untracked).stdout
+        colliding = [path for path in listing.split("\0") if path]
+        if not colliding:
+            return
+        self.git("stash", "push", "-q", "--include-untracked", "-m", f"sync: {self.vm} copies of files git also added", "--", *colliding)
+        self.say(
+            f"  {', '.join(colliding)} also added in git; git's version goes live, "
+            f"this VM's copy is kept in the stash (rune openclaw::team-git {self.team} stash show -p --include-untracked)"
+        )
 
     def _settle_autostash(self) -> None:
         """Uncommitted local edits that clash with git stay in `git stash`; git's version goes live."""
