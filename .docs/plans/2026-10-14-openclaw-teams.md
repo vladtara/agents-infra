@@ -1254,6 +1254,7 @@ The tech team. Describe their roles, preferences and working hours here.
 Empty placeholder files:
 
 ```bash
+mkdir -p examples/teams/tech/workspaces/{coordinator,reviewer}/{memory,skills}
 touch examples/teams/tech/workspaces/{coordinator,reviewer}/{memory,skills}/.gitkeep
 ```
 

@@ -1,0 +1,5 @@
+{
+  "name": "Reviewer",
+  "description": "Reviews code and designs for the tech team",
+  "subagents": {"allowAgents": []}
+}

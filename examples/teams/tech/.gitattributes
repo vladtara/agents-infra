@@ -1,0 +1,3 @@
+workspaces/*/MEMORY.md     merge=union
+workspaces/*/DREAMS.md     merge=union
+workspaces/*/memory/**     merge=union

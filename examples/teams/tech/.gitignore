@@ -1,0 +1,13 @@
+.openclaw/
+.openclaw-cli-images/
+.openclaw-repair/
+openclaw-workspace-state.json
+BOOTSTRAP.md
+**/memory/.dreams/
+.env
+*.key
+*.pem
+secrets*
+node_modules/
+downloads/
+.cache/
