@@ -196,5 +196,16 @@ class RepoManifestTest(unittest.TestCase):
         self.assertIn("--secret-input-mode ref", (REPO / "stacks/openclaw/openclaw.rune").read_text())
         self.assertIn("Gateway not detected yet", onboard.note)
 
+    def test_openclaw_compose_wires_teams(self):
+        compose = (REPO / "stacks/openclaw/compose.yaml").read_text()
+        self.assertIn('pid: "service:openclaw-gateway"', compose)
+        self.assertEqual(compose.count("- ./data/teams:/home/node/teams"), 2)
+        team_git = compose[compose.index("  team-git:"):]
+        for line in ('profiles: ["tools"]', 'entrypoint: ["git"]', "- ./data/team-keys:/keys", "- ./data/team-remotes:/remotes"):
+            self.assertIn(line, team_git)
+        self.assertNotIn("env_file", team_git)
+        self.assertNotIn("network_mode", team_git)
+        self.assertIn("OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:2026.10.3", (REPO / "stacks/openclaw/.env.example").read_text())
+
 if __name__ == "__main__":
     unittest.main()

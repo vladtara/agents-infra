@@ -1,4 +1,4 @@
-# Based on openclaw/openclaw docker-compose.yml (v2026.9.8), adapted for Dockge:
+# Based on openclaw/openclaw docker-compose.yml (v2026.10.3), adapted for Dockge:
 # prebuilt image, relative bind mounts, CLI behind a profile, and a Tailscale
 # sidecar that owns the network namespace. The gateway binds loopback and is
 # reachable only through the sidecar's Tailscale Serve (HTTPS).
@@ -36,7 +36,7 @@ services:
       start_period: 20s
 
   openclaw-gateway:
-    image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:2026.9.8}
+    image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:2026.10.3}
     network_mode: service:tailscale
     env_file:
       - path: .env
@@ -60,6 +60,7 @@ services:
       - ./data/workspace:/home/node/.openclaw/workspace
       - ./data/auth:/home/node/.config/openclaw
       - ./backups:/home/node/backups
+      - ./data/teams:/home/node/teams
       ## Sandbox isolation (agents.defaults.sandbox) is off. It needs a custom image
       ## built with OPENCLAW_INSTALL_DOCKER_CLI=1 (published images have no Docker
       ## CLI), the sandbox image, and the host Docker socket, which is
@@ -85,7 +86,7 @@ services:
   # One-off CLI: docker compose run --rm openclaw-cli <command>
   # The profile keeps Dockge's "Start" (up -d) from launching it.
   openclaw-cli:
-    image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:2026.9.8}
+    image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:2026.10.3}
     profiles: ["cli"]
     network_mode: service:tailscale
     env_file:
@@ -109,14 +110,37 @@ services:
       - ./data/workspace:/home/node/.openclaw/workspace
       - ./data/auth:/home/node/.config/openclaw
       - ./backups:/home/node/backups
+      - ./data/teams:/home/node/teams
     cap_drop:
       - NET_RAW
       - NET_ADMIN
     security_opt:
       - no-new-privileges:true
+    # 2026.10.1+ checks gateway ownership through the shared PID namespace.
+    pid: "service:openclaw-gateway"
     stdin_open: true
     tty: true
     init: true
     entrypoint: ["node", "dist/index.js"]
     depends_on:
       - openclaw-gateway
+
+  # One-off git for team repos (stacks/openclaw/teams.py, TEAMS.md). It holds
+  # the deploy keys, gets no .env and stays off the tailnet namespace.
+  team-git:
+    image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:2026.10.3}
+    profiles: ["tools"]
+    entrypoint: ["git"]
+    working_dir: /teams
+    environment:
+      HOME: /home/node
+      GIT_TERMINAL_PROMPT: "0"
+    volumes:
+      - ./data/teams:/teams
+      - ./data/team-keys:/keys
+      - ./data/team-remotes:/remotes
+    cap_drop:
+      - NET_RAW
+      - NET_ADMIN
+    security_opt:
+      - no-new-privileges:true
