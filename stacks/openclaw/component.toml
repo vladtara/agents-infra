@@ -1,6 +1,6 @@
 description = "OpenClaw: personal AI assistant gateway on its own tailnet node"
 order = 20
-dirs = ["data/config", "data/config/logs", "data/config/agents.d", "data/workspace", "data/auth", "data/tailscale", "data/teams", "data/team-keys", "data/team-remotes", "backups"]
+dirs = ["data/config", "data/config/logs", "data/config/agents.d", "data/workspace", "data/auth", "data/tailscale", "data/teams", "data/team-keys", "data/team-remotes", "data/team-gitdirs", "backups"]
 
 [env]
 generate = ["OPENCLAW_GATEWAY_TOKEN"]
@@ -17,7 +17,7 @@ run = '''run --rm --user root --entrypoint sh openclaw-gateway -c 'PATH=/usr/loc
 # Team folders are written by uid 1000 from the team-git container (teams.py).
 # Only the mount points: clones and keys inside keep their owners.
 [[setup]]
-run = "run --rm --user root --entrypoint chown team-git node:node /teams /keys /remotes"
+run = "run --rm --user root --entrypoint chown team-git node:node /teams /keys /remotes /gitdirs"
 
 # Onboarding stores API keys as env references (--secret-input-mode ref), so
 # they live only in .env. With --yes the headless variant picks the provider

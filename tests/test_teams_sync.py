@@ -105,9 +105,9 @@ class SyncTest(SyncCase):
         self.vm_write("team.json5", f'{{"description": "{KEY}"}}\n')
         self.assertTrue(self.sync(), self.output())
         self.assertEqual(self.upstream("branch", "--list", "rescue/*"), "")
-        local = run_git(self.clone, "branch", "--list", "rescue/*").stdout.strip()
+        local = self.vm_git("tech", "branch", "--list", "rescue/*").stdout.strip()
         self.assertTrue(local.endswith("-settings"), local)
-        self.assertIn(KEY, run_git(self.clone, "show", f"{local}:team.json5").stdout)
+        self.assertIn(KEY, self.vm_git("tech", "show", f"{local}:team.json5").stdout)
         self.assertIn("not pushed because team.json5: looks like it contains a key or token", self.output())
         self.assertNotIn(KEY, (self.clone / "team.json5").read_text())
 
@@ -140,8 +140,22 @@ class SyncTest(SyncCase):
         self.assertTrue(self.sync(), self.output())
         self.assertEqual((self.clone / "workspaces/reviewer/USER.md").read_text(), "# The people\n\nUpdated by a person.\n")
         self.assertIn("kept in `git stash` in data/teams/tech", self.output())
-        self.assertIn(KEY, run_git(self.clone, "stash", "show", "-p").stdout)
+        self.assertIn(KEY, self.vm_git("tech", "stash", "show", "-p").stdout)
         self.assertTrue(self.sync(), self.output())
+
+    def test_hooks_planted_in_the_clone_never_run(self):
+        marker = self.root / "hook-ran"
+        hooks = self.clone / ".git" / "hooks"
+        hooks.mkdir(parents=True)
+        for name in ("pre-commit", "pre-push", "post-checkout", "post-rewrite"):
+            (hooks / name).write_text(f"#!/bin/sh\ntouch {marker}\n")
+            (hooks / name).chmod(0o755)
+        (self.clone / ".git" / "config").write_text("[core]\n\tsshCommand = touch " + str(marker) + "\n")
+        self.vm_write("workspaces/coordinator/memory/a.md", "a\n")
+        self.person_push({"workspaces/reviewer/SOUL.md": "# Soul\n\nNew.\n"})
+        self.assertTrue(self.sync(), self.output())
+        self.assertFalse(marker.exists())
+        self.assertIn("workspaces/coordinator/memory/a.md", self.upstream("ls-tree", "-r", "--name-only", "main"))
 
     def test_nested_git_folder_is_skipped(self):
         run_git(self.clone / "workspaces/reviewer", "init", "-q")
@@ -156,12 +170,12 @@ class SyncTest(SyncCase):
     def test_broken_settings_in_git_do_not_go_live(self):
         self.vm_write("workspaces/coordinator/memory/today.md", "local\n")
         self.person_push({"team.json5": '{"workspace": "/elsewhere"}\n', "workspaces/reviewer/SOUL.md": "# new\n"})
-        head = run_git(self.clone, "rev-parse", "HEAD").stdout
+        head = self.vm_git("tech", "rev-parse", "HEAD").stdout
         self.assertFalse(self.sync())
         self.assertIn("must not set workspace", self.output())
         self.assertEqual((self.clone / "workspaces/reviewer/SOUL.md").read_text().splitlines()[0], "# Soul")
-        self.assertNotEqual(run_git(self.clone, "rev-parse", "HEAD").stdout, head)
-        self.assertEqual(run_git(self.clone, "rev-list", "--count", "origin/main..HEAD").stdout.strip(), "1")
+        self.assertNotEqual(self.vm_git("tech", "rev-parse", "HEAD").stdout, head)
+        self.assertEqual(self.vm_git("tech", "rev-list", "--count", "origin/main..HEAD").stdout.strip(), "1")
 
     def test_settings_openclaw_rejects_do_not_go_live(self):
         self.person_push({"team.json5": '{"model": 5}\n'})
@@ -208,7 +222,7 @@ class SyncTest(SyncCase):
         self.paths.remote("tech").rename(self.root / "moved.git")
         self.assertFalse(self.sync())
         self.assertIn("fetch failed", self.output())
-        self.assertIn("sync: test-vm", run_git(self.clone, "log", "-1", "--format=%s").stdout)
+        self.assertIn("sync: test-vm", self.vm_git("tech", "log", "-1", "--format=%s").stdout)
 
     def test_sync_all_continues_after_a_failing_team(self):
         commands.add(self.ctx, "fin", str(EXAMPLE))

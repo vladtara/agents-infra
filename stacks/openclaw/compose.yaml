@@ -139,6 +139,8 @@ services:
       - ./data/teams:/teams
       - ./data/team-keys:/keys
       - ./data/team-remotes:/remotes
+      # Git data of the clones: here, not in data/teams, so agents cannot plant hooks or config.
+      - ./data/team-gitdirs:/gitdirs
     cap_drop:
       - NET_RAW
       - NET_ADMIN

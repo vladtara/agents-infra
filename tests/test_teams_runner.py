@@ -23,11 +23,13 @@ class DockerRunnerTest(unittest.TestCase):
         return self.run.call_args.args[0]
 
     def test_git_runs_in_team_git_with_the_team_key(self):
-        self.runner.git(self.paths.clone("tech"), "fetch", "origin", "main", team="tech")
+        self.runner.git(self.paths.clone("tech"), "fetch", "origin", "main", team="tech", git_dir=self.paths.git_dir("tech"))
         self.assertEqual(self.cmd(), [
             "docker", "compose", "run", "--rm", "-T",
             "-e", "GIT_TERMINAL_PROMPT=0", "-e", "GIT_EDITOR=true",
+            "-e", "GIT_CONFIG_COUNT=1", "-e", "GIT_CONFIG_KEY_0=core.hooksPath", "-e", "GIT_CONFIG_VALUE_0=/dev/null",
             "-e", "GIT_SSH_COMMAND=" + runner.ssh_command("tech"),
+            "-e", "GIT_DIR=/gitdirs/tech", "-e", "GIT_WORK_TREE=/teams/tech",
             "-w", "/teams/tech", "team-git", "fetch", "origin", "main",
         ])
         self.assertEqual(self.run.call_args.kwargs["cwd"], self.paths.stack)
@@ -37,6 +39,7 @@ class DockerRunnerTest(unittest.TestCase):
     def test_path_mapping(self):
         self.assertEqual(self.runner.git_path(self.paths.remote("tech")), "/remotes/tech.git")
         self.assertEqual(self.runner.git_path(self.paths.teams), "/teams")
+        self.assertEqual(self.runner.git_path(self.paths.git_dir("tech")), "/gitdirs/tech")
         with self.assertRaisesRegex(TeamError, "outside the folders"):
             self.runner.git_path(Path("/etc"))
 
@@ -68,6 +71,8 @@ class DockerRunnerTest(unittest.TestCase):
     def test_remove_tree_refuses_mount_roots(self):
         with self.assertRaisesRegex(TeamError, "refusing"):
             self.runner.remove_tree(self.paths.teams)
+        with self.assertRaisesRegex(TeamError, "refusing"):
+            self.runner.remove_tree(self.paths.gitdirs)
         self.runner.remove_tree(self.paths.clone("tech"))
         self.assertEqual(self.cmd()[-4:], ["team-git", "-rf", "--", "/teams/tech"])
 

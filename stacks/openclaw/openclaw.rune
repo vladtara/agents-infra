@@ -133,3 +133,9 @@ teams:
 [confirm("Remove this team's agents and clone from this VM?")]
 team-remove team:
     python3 stacks/openclaw/teams.py remove {{team}}
+
+# Run git on a team's clone (its git data lives in data/team-gitdirs), e.g. `rune openclaw::team-git tech stash list`.
+[group("openclaw")]
+[working-directory("stacks/openclaw")]
+team-git team +args:
+    docker compose run --rm -e GIT_DIR=/gitdirs/{{team}} -e GIT_WORK_TREE=/teams/{{team}} -w /teams/{{team}} team-git {{args}}

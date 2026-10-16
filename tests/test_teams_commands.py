@@ -14,11 +14,12 @@ class AddTest(StackCase):
     def test_add_local_folder(self):
         self.assertEqual(commands.add(self.ctx, "tech", str(EXAMPLE)), [])
         self.assertEqual(registry.load(self.paths.registry).teams["tech"].url, "examples/teams/tech")
-        clone = self.paths.clone("tech")
-        self.assertEqual(run_git(clone, "config", "pull.rebase").stdout.strip(), "true")
-        self.assertEqual(run_git(clone, "config", "rebase.autoStash").stdout.strip(), "true")
-        self.assertEqual(run_git(clone, "config", "user.email").stdout.strip(), "openclaw@test-vm")
-        self.assertEqual(run_git(clone, "remote", "get-url", "origin").stdout.strip(), str(self.paths.remote("tech")))
+        self.assertFalse((self.paths.clone("tech") / ".git").exists())
+        self.assertTrue((self.paths.git_dir("tech") / "HEAD").is_file())
+        self.assertEqual(self.vm_git("tech", "config", "pull.rebase").stdout.strip(), "true")
+        self.assertEqual(self.vm_git("tech", "config", "rebase.autoStash").stdout.strip(), "true")
+        self.assertEqual(self.vm_git("tech", "config", "user.email").stdout.strip(), "openclaw@test-vm")
+        self.assertEqual(self.vm_git("tech", "remote", "get-url", "origin").stdout.strip(), str(self.paths.remote("tech")))
         self.assertIn("tech-coordinator", self.roster())
 
     def test_contract_violation_leaves_nothing_behind(self):
@@ -28,6 +29,7 @@ class AddTest(StackCase):
         with self.assertRaisesRegex(TeamError, "workspaces/reviewer: missing SOUL.md"):
             commands.add(self.ctx, "tech", str(broken))
         self.assertFalse(self.paths.clone("tech").exists())
+        self.assertFalse(self.paths.git_dir("tech").exists())
         self.assertFalse(self.paths.remote("tech").exists())
         self.assertFalse(self.paths.registry.exists())
         self.assertEqual(self.config(), {"gateway": {"mode": "local"}})
@@ -59,6 +61,7 @@ class RemoveTest(StackCase):
         self.assertTrue(commands.sync(self.ctx, "tech"))
         commands.remove(self.ctx, "tech")
         self.assertFalse(self.paths.clone("tech").exists())
+        self.assertFalse(self.paths.git_dir("tech").exists())
         self.assertEqual(list(self.roster()), ["main"])
         self.assertEqual(registry.load(self.paths.registry).teams, {})
         self.assertIn("team tech removed: tech-coordinator, tech-reviewer", self.output())

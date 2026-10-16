@@ -68,6 +68,7 @@ class PathsTest(unittest.TestCase):
         self.assertEqual(paths.keys, Path("/s/data/team-keys"))
         self.assertEqual(paths.remote("tech"), Path("/s/data/team-remotes/tech.git"))
         self.assertEqual(paths.registry, Path("/s/teams.toml"))
+        self.assertEqual(paths.git_dir("tech"), Path("/s/data/team-gitdirs/tech"))
 
 
 if __name__ == "__main__":

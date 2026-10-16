@@ -32,10 +32,13 @@ def done(stdout="", stderr="", code=0):
     return subprocess.CompletedProcess([], code, stdout=stdout, stderr=stderr)
 
 
-def run_git(cwd, *args, check=True, binary=False, input=None):
+def run_git(cwd, *args, check=True, binary=False, input=None, git_dir=None):
     if input is None:
         input = b"" if binary else ""
-    result = subprocess.run(["git", *args], cwd=cwd, env=GIT_ENV, input=input, capture_output=True, text=not binary)
+    if binary and isinstance(input, str):
+        input = input.encode()
+    env = {**GIT_ENV, "GIT_DIR": str(git_dir), "GIT_WORK_TREE": str(cwd)} if git_dir else GIT_ENV
+    result = subprocess.run(["git", *args], cwd=cwd, env=env, input=input, capture_output=True, text=not binary)
     if check and result.returncode:
         stderr = result.stderr if isinstance(result.stderr, str) else result.stderr.decode()
         raise TeamError(f"git {' '.join(args)} failed: {stderr.strip()}")
@@ -66,10 +69,10 @@ class LocalRunner:
         self.openclaw_calls = []
         self.before_git = None
 
-    def git(self, cwd, *args, team=None, check=True, binary=False, input=None):
+    def git(self, cwd, *args, team=None, git_dir=None, check=True, binary=False, input=None):
         if self.before_git:
             self.before_git(cwd, args)
-        return run_git(cwd, *args, check=check, binary=binary, input=input)
+        return run_git(cwd, *args, check=check, binary=binary, input=input, git_dir=git_dir)
 
     def git_path(self, host):
         return str(host)
@@ -81,7 +84,10 @@ class LocalRunner:
         shutil.copytree(src, dest, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".git"))
 
     def remove_tree(self, path):
-        shutil.rmtree(path, ignore_errors=True)
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path)
+        else:
+            path.unlink(missing_ok=True)
 
     def parse_json5(self, texts):
         parsed, errors = {}, {}
@@ -130,7 +136,7 @@ class StackCase(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         self.root = Path(self._tmp.name)
         self.paths = Paths(self.root / "stack")
-        for folder in (self.paths.teams, self.paths.agents_d, self.paths.keys, self.paths.remotes):
+        for folder in (self.paths.teams, self.paths.agents_d, self.paths.keys, self.paths.remotes, self.paths.gitdirs):
             folder.mkdir(parents=True)
         self.write_config({"gateway": {"mode": "local"}})
         self.runner = LocalRunner()
@@ -154,3 +160,7 @@ class StackCase(unittest.TestCase):
 
     def output(self):
         return self.out.getvalue()
+
+    def vm_git(self, team, *args, **kwargs):
+        """git on this VM's clone of team, the way teams.py runs it (git data outside the clone)."""
+        return run_git(self.paths.clone(team), *args, git_dir=self.paths.git_dir(team), **kwargs)

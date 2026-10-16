@@ -1,8 +1,9 @@
 """Run git and OpenClaw in one-off containers of the openclaw stack.
 
-git runs in team-git (uid 1000, deploy keys, no .env); config files are read
-and written through openclaw-cli, because data/config belongs to uid 1000
-and openclaw.json is mode 0600.
+git runs in team-git (uid 1000, deploy keys, no .env) with the git data of each
+clone in /gitdirs, which the gateway never mounts, and hooks disabled. Config
+files are read and written through openclaw-cli, because data/config belongs
+to uid 1000 and openclaw.json is mode 0600.
 """
 
 import io
@@ -75,14 +76,19 @@ def json_out(text: str) -> dict:
 class DockerRunner:
     def __init__(self, paths: Paths):
         self.paths = paths
-        self.git_mounts = {paths.teams: "/teams", paths.keys: "/keys", paths.remotes: "/remotes"}
+        self.git_mounts = {paths.teams: "/teams", paths.keys: "/keys", paths.remotes: "/remotes", paths.gitdirs: "/gitdirs"}
         self.gateway_mounts = {paths.config: GATEWAY_CONFIG, paths.teams: GATEWAY_TEAMS}
 
-    def git(self, cwd: Path, *args: str, team: str | None = None, check: bool = True,
-            binary: bool = False, input: str | None = None) -> subprocess.CompletedProcess:
+    def git(self, cwd: Path, *args: str, team: str | None = None, git_dir: Path | None = None,
+            check: bool = True, binary: bool = False, input: str | bytes | None = None) -> subprocess.CompletedProcess:
         env = ["-e", "GIT_TERMINAL_PROMPT=0", "-e", "GIT_EDITOR=true"]
+        env += ["-e", "GIT_CONFIG_COUNT=1", "-e", "GIT_CONFIG_KEY_0=core.hooksPath", "-e", "GIT_CONFIG_VALUE_0=/dev/null"]
         if team:
             env += ["-e", f"GIT_SSH_COMMAND={ssh_command(team)}"]
+        if git_dir:
+            env += ["-e", f"GIT_DIR={self.git_path(git_dir)}", "-e", f"GIT_WORK_TREE={self.git_path(cwd)}"]
+        if binary and isinstance(input, str):
+            input = input.encode()
         return self._compose(
             "run", "--rm", "-T", *env, "-w", self.git_path(cwd), "team-git", *args,
             label=f"git {' '.join(args)}", check=check, binary=binary, input=input,

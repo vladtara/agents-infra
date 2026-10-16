@@ -46,6 +46,10 @@ class Paths:
         return self.data / "team-remotes"
 
     @property
+    def gitdirs(self) -> Path:
+        return self.data / "team-gitdirs"
+
+    @property
     def registry(self) -> Path:
         return self.stack / "teams.toml"
 
@@ -54,6 +58,10 @@ class Paths:
 
     def remote(self, team: str) -> Path:
         return self.remotes / f"{team}.git"
+
+    def git_dir(self, team: str) -> Path:
+        """Git data of a clone, kept outside data/teams so agents cannot change hooks or config."""
+        return self.gitdirs / team
 
 
 @dataclass

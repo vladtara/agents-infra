@@ -20,6 +20,7 @@ def nul(paths: list[str]) -> str:
 class Sync:
     runner: object
     clone: Path
+    git_dir: Path
     team: str
     branch: str
     vm: str
@@ -30,7 +31,7 @@ class Sync:
         return f"origin/{self.branch}"
 
     def git(self, *args: str, check: bool = True, binary: bool = False, input: str | None = None):
-        return self.runner.git(self.clone, *args, team=self.team, check=check, binary=binary, input=input)
+        return self.runner.git(self.clone, *args, team=self.team, git_dir=self.git_dir, check=check, binary=binary, input=input)
 
     def status(self, *pathspec: str) -> list[tuple[str, str]]:
         """(XY, path) for every changed or untracked file, as `git status --porcelain` reports it."""

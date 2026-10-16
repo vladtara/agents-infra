@@ -30,9 +30,10 @@ def add(ctx, name: str, source: str, branch: str = "main") -> list[str]:
 
 def clone_team(ctx, team: Team) -> list[str]:
     """Steps 2 to 5 of team-add. Leaves no clone behind when it fails."""
-    clone = ctx.paths.clone(team.name)
-    if clone.exists():
-        raise TeamError(f"{clone} already exists; move it away first")
+    clone, git_dir = ctx.paths.clone(team.name), ctx.paths.git_dir(team.name)
+    for path in (clone, git_dir):
+        if path.exists():
+            raise TeamError(f"{path} already exists; move it away first")
     folder = local_folder(ctx, team.url)
     bare = ctx.paths.remote(team.name)
     create_remote = folder is not None and not bare.exists()
@@ -45,11 +46,16 @@ def clone_team(ctx, team: Team) -> list[str]:
         if create_remote:
             _import(ctx, team, folder, remote)
         else:
-            ctx.runner.git(ctx.paths.teams, "clone", "-q", "--branch", team.branch, remote, team.name, team=team.name)
+            ctx.runner.git(
+                ctx.paths.teams, "clone", "-q", "--separate-git-dir", ctx.runner.git_path(git_dir),
+                "--branch", team.branch, remote, team.name, team=team.name,
+            )
+            ctx.runner.remove_tree(clone / ".git")
             _configure(ctx, team)
         return gateway.apply_team(ctx, team.name, from_rev(_sync(ctx, team).git, "HEAD"))
     except BaseException:
         ctx.runner.remove_tree(clone)
+        ctx.runner.remove_tree(git_dir)
         if create_remote:
             ctx.runner.remove_tree(bare)
         raise
@@ -73,9 +79,9 @@ def sync(ctx, name: str | None = None) -> bool:
 
 
 def sync_team(ctx, team: Team) -> list[str]:
-    clone = ctx.paths.clone(team.name)
-    if not clone.is_dir():
-        raise TeamError(f"{clone} is missing; clone it with: python3 init.py openclaw")
+    for path in (ctx.paths.clone(team.name), ctx.paths.git_dir(team.name)):
+        if not path.is_dir():
+            raise TeamError(f"{path} is missing; move data/teams/{team.name} away and clone it again with: python3 init.py openclaw")
     state = _sync(ctx, team)
     when = datetime.now()
     stamp = when.strftime("%Y%m%d-%H%M%S")
@@ -101,6 +107,8 @@ def remove(ctx, name: str) -> None:
     removed = gateway.remove_team(ctx, name)
     if clone.is_dir():
         ctx.runner.remove_tree(clone)
+    if ctx.paths.git_dir(name).is_dir():
+        ctx.runner.remove_tree(ctx.paths.git_dir(name))
     del ctx.registry.teams[name]
     registry.save(ctx.paths.registry, ctx.registry)
     ctx.say(f"team {name} removed" + (f": {', '.join(removed)}" if removed else ""))
@@ -162,7 +170,9 @@ def local_folder(ctx, url: str) -> Path | None:
 def _import(ctx, team: Team, folder: Path, remote: str) -> None:
     """Turn a plain folder into a bare repo in data/team-remotes and a clone of it."""
     ctx.runner.git(ctx.paths.remotes, "init", "-q", "--bare", "-b", team.branch, f"{team.name}.git")
-    ctx.runner.git(ctx.paths.teams, "init", "-q", "-b", team.branch, team.name)
+    git_dir = ctx.paths.git_dir(team.name)
+    ctx.runner.git(ctx.paths.teams, "init", "-q", "-b", team.branch, "--separate-git-dir", ctx.runner.git_path(git_dir), team.name)
+    ctx.runner.remove_tree(ctx.paths.clone(team.name) / ".git")
     _configure(ctx, team)
     ctx.runner.copy_in(folder, ctx.paths.clone(team.name))
     git = _sync(ctx, team).git
@@ -184,7 +194,7 @@ def _configure(ctx, team: Team) -> None:
 
 
 def _sync(ctx, team: Team) -> Sync:
-    return Sync(ctx.runner, ctx.paths.clone(team.name), team.name, team.branch, ctx.registry.vm, ctx.say)
+    return Sync(ctx.runner, ctx.paths.clone(team.name), ctx.paths.git_dir(team.name), team.name, team.branch, ctx.registry.vm, ctx.say)
 
 
 def _selected(ctx, name: str | None) -> list[Team]:

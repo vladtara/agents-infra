@@ -218,20 +218,23 @@ class RepoManifestTest(unittest.TestCase):
         team_git = compose[compose.index("  team-git:"):]
         for line in ('profiles: ["tools"]', 'entrypoint: ["git"]', "- ./data/team-keys:/keys", "- ./data/team-remotes:/remotes"):
             self.assertIn(line, team_git)
+        self.assertIn("- ./data/team-gitdirs:/gitdirs", team_git)
+        self.assertEqual(compose.count("team-gitdirs"), 1)
         self.assertNotIn("env_file", team_git)
         self.assertNotIn("network_mode", team_git)
         self.assertIn("OPENCLAW_IMAGE=ghcr.io/openclaw/openclaw:2026.10.3", (REPO / "stacks/openclaw/.env.example").read_text())
 
     def test_openclaw_manifest_sets_up_teams(self):
         openclaw = {c.name: c for c in components.discover(REPO)}["openclaw"]
-        for folder in ("data/teams", "data/team-keys", "data/team-remotes", "data/config/agents.d"):
+        for folder in ("data/teams", "data/team-keys", "data/team-remotes", "data/team-gitdirs", "data/config/agents.d"):
             self.assertIn(folder, openclaw.dirs)
         self.assertEqual(openclaw.setup[-1].script, "teams.py apply")
-        self.assertIn("run --rm --user root --entrypoint chown team-git node:node /teams /keys /remotes",
+        self.assertIn("run --rm --user root --entrypoint chown team-git node:node /teams /keys /remotes /gitdirs",
                       [step.run for step in openclaw.setup])
         rune = (REPO / "stacks/openclaw/openclaw.rune").read_text()
-        for task in ("team-add team source:", "team-sync *team:", "teams:", "team-remove team:"):
+        for task in ("team-add team source:", "team-sync *team:", "teams:", "team-remove team:", "team-git team +args:"):
             self.assertIn(task, rune)
+        self.assertIn("-e GIT_DIR=/gitdirs/{{team}} -e GIT_WORK_TREE=/teams/{{team}}", rune)
 
 if __name__ == "__main__":
     unittest.main()
