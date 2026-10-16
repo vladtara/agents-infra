@@ -175,7 +175,7 @@ class SyncTest(SyncCase):
         self.person_push({"workspaces/reviewer/USER.md": "# The people\n\nUpdated by a person.\n"})
         self.assertTrue(self.sync(), self.output())
         self.assertEqual((self.clone / "workspaces/reviewer/USER.md").read_text(), "# The people\n\nUpdated by a person.\n")
-        self.assertIn("kept in `git stash` in data/teams/tech", self.output())
+        self.assertIn("kept in the stash (rune openclaw::team-git tech stash show -p)", self.output())
         self.assertIn(KEY, self.vm_git("tech", "stash", "show", "-p").stdout)
         self.assertTrue(self.sync(), self.output())
 
@@ -219,6 +219,15 @@ class SyncTest(SyncCase):
     def test_remove_keeps_settings_edits(self):
         self.vm_write("team.json5", '{"description": "edited on the vm, not synced"}\n')
         self.assert_remove_refused("team.json5")
+
+    def test_skipped_file_deleted_in_git(self):
+        self.vm_write("workspaces/reviewer/USER.md", f"my key {KEY}\n")
+        self.person_push({"workspaces/reviewer/USER.md": None})
+        self.assertTrue(self.sync(), self.output())
+        self.assertFalse((self.clone / "workspaces/reviewer/USER.md").exists())
+        self.assertIn(KEY, self.vm_git("tech", "stash", "show", "-p", "--include-untracked").stdout + self.vm_git("tech", "stash", "show", "-p").stdout)
+        self.assertEqual(self.vm_git("tech", "diff", "--name-only", "--diff-filter=U").stdout, "")
+        self.assertTrue(self.sync(), self.output())
 
     def test_nested_git_folder_is_skipped(self):
         run_git(self.clone / "workspaces/reviewer", "init", "-q")

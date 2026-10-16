@@ -265,11 +265,19 @@ class Sync:
         unmerged = self._unmerged()
         if not unmerged:
             return
-        self.git("checkout", "HEAD", "--", *unmerged)
+        for path in unmerged:
+            self._take_head(path)
         self.say(
             f"  uncommitted edits to {', '.join(unmerged)} clash with git; git's version is live, "
-            f"the edits are kept in `git stash` in data/teams/{self.team}"
+            f"the edits are kept in the stash (rune openclaw::team-git {self.team} stash show -p)"
         )
+
+    def _take_head(self, path: str) -> None:
+        """Resolve path to HEAD's version, or to HEAD's deletion."""
+        if self.git("cat-file", "-e", f"HEAD:{path}", check=False).returncode == 0:
+            self.git("checkout", "HEAD", "--", path)
+        else:
+            self.git("rm", "-q", "-f", "--", path)
 
     def _unmerged(self) -> list[str]:
         return [p for p in self.git("diff", "--name-only", "-z", "--diff-filter=U").stdout.split("\0") if p]
