@@ -1,7 +1,7 @@
 # OpenClaw team workspaces managed by git
 
 Date: 2026-10-14
-Status: approved; revised after OpenClaw source review (see "Revision"), pending re-review
+Status: approved; revision re-approved 2026-10-16; spike done (see "Addendum")
 
 ## Context
 
@@ -296,3 +296,32 @@ Fallbacks: if 1 or 2 fail, teams.py writes the merged entries inline into `openc
 OpenClaw v2026.10.3 docs: `docs/concepts/{multi-agent,multi-user,agent-workspace}.md`, `docs/start/teams.md`, `docs/gateway/multi-tenant-hosting.md`, `docs/gateway/config-secrets-env.md`, `docs/gateway/config-tools/sessions-and-subagents.md`, `docs/gateway/security/trust-model.md`, `docs/tools/skills-config.md`, `docs/install/docker/compose-operations.md`, `docs/cli/{claws,backup}.md`, `CHANGELOG/2026.10.1.md`.
 
 OpenClaw v2026.10.3 source: `src/config/{zod-schema.agents.ts,includes.ts,io.write-prepare.ts,include-write-boundary.ts,mutate.ts,io.read-helpers.ts,paths.ts}`, `src/gateway/{config-reload-plan.ts,config-reload.ts}`, `src/cli/{config-cli.ts,plugins-cli.ts,non-clawhub-install-acknowledgement.ts}`, `src/agents/{workspace.ts,workspace-git.ts,agent-scope-config.ts}`, `src/commands/{backup-shared.ts,agents.commands.list.ts}`, `package.json`.
+
+## Addendum (2026-10-16): spike on 2026.10.3 and changes found while building
+
+The spike ran in a scratch copy of the stack (compose project `oc-planwork`, no tailnet login) on `ghcr.io/openclaw/openclaw:2026.10.3`: the component's setup steps with headless onboarding and a placeholder key, then the teamlib code from the implementation plan. The teamlib tests also passed on the image's git 2.39 and Python 3.11.
+
+| # | Check | Result |
+|---|-------|--------|
+| 1 | Direct `openclaw.json` edit adds `$include` entries | Hot reload applied (`agents.entries.tech-*`, `agents.ownership`, `agents.defaults.systemAgent`); `agents list --json` shows the team agents with their workspaces |
+| 2 | Entries survive OpenClaw writes | `config set logging.maxFileBytes` and `config set agents.entries.main.description` keep the includes. `config set agents.entries.tech-reviewer.description` writes through to `agents.d/tech-reviewer.json5` (OpenClaw keeps `.bak` copies next to it); the next sync restores git's version |
+| 3 | `main` and the default agent | Onboarding writes `agents.entries.main` with `workspace` and `agentDir`, and sets `agents.defaults.workspace`. With explicit ownership and `systemAgent.agentId: "main"`, `status` works and `tui` opens on agent `main` without `--agent` |
+| 4 | `json5` in `openclaw-cli` | `require("json5")` works with `--entrypoint node` |
+| 5 | `config validate` with `OPENCLAW_CONFIG_PATH` | Prints JSON with `valid` and `issues[].path`, for example `agents.entries.tech-coordinator.model: Invalid input`; exit 1 when invalid. Broken settings pushed to git stop the sync before anything goes live |
+| 6 | `tools.sessions.visibility: "tree"` | Pinned by the config step and accepted. The live cross-team check needs a model key: on the VM (Testing 6) |
+| 7 | `pid` on `openclaw-cli` | `status`, `tui`, `plugins list --json` and `backup create` work. `plugins list --json` returns `{workspaceDir, workspaceScope, registry, plugins, diagnostics}`; a non-ClawHub install without a TTY exits 1 with "Install cancelled; rerun with --force after reviewing the source." |
+| 8 | No nested `.git` in team workspaces | None after gateway start and restart (no agent turn was run: no model key) |
+
+Also confirmed: `backup create` archives `/home/node/teams/...` and `agents.d/`. `team-add` takes about 25 s and `team-sync` about 22 s per team, one container per git or OpenClaw call. No fallback is needed; `INLINE` stays off.
+
+Changes to the design:
+
+- **The previous default agent keeps its workspace.** On 2026.9.8 the gateway's startup doctor rewrites the roster to `agents.entries.main: {}`; switching to explicit ownership then moved `main` to `~/.openclaw/workspace-main`, away from its files. 2026.10.3 onboarding already pins the workspace, but teams.py now pins it too whenever it switches a roster to explicit ownership: the sole existing agent without a workspace gets `agents.defaults.workspace`, or `/home/node/.openclaw/workspace`. OpenClaw's own migration does the same.
+- **Team names must not dash-prefix each other** (`tech` and `tech-ops`), so every agent id belongs to one team. teams.py owns an entry when its id starts with `<team>-` and it is that agent's include.
+- **Uncommitted edits that clash with git.** A file left out of the commit (it holds a secret) and also changed in git made rebase's autostash leave conflict markers in the live workspace and blocked every later sync. Git's version now goes live and the edit stays in `git stash`; sync reports it.
+- **Removing an agent also removes OpenClaw's `.bak` copies** of its `agents.d` file (`.bak`, `.bak.1` to `.bak.4`).
+- **`teams.py apply` exits 0** and reports every per-team problem as an `action:` line, so a team problem never fails the OpenClaw install. It exits 1 only when nothing can run, for example an unreadable `teams.toml`.
+- **Ownership of the team folders** is set from the `team-git` container (`chown node:node /teams /keys /remotes`), because `data/team-keys` and `data/team-remotes` are not mounted in the gateway.
+- **The example team sets no model**, so it runs on the provider onboarding chose: `team.json5` has `description` and `subagents.allowAgents: ["reviewer"]`; `agents/reviewer.json5` sets `name`, `description` and `allowAgents: []`.
+- **Rescue branch names:** `rescue/<vm>/<YYYYMMDD-HHMMSS>` for conflicts, with `-settings` appended for settings edited on the VM.
+- **Sync output** names what happened: commits pushed and pulled, agents added or removed, files left out, rescue branches.
